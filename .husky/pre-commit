@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+if git diff --staged --name-only | grep -q -e '^test' -e '^src'
+then
+    pnpm test run
+
+else 
+    echo 'only commit'
+fi
+
+
+pnpm type-check
+
+pnpm lint-staged
+
+
+
