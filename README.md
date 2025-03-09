@@ -1,10 +1,10 @@
-# 🔗 Safe 🔗
+# 🔗 ts-safe 🔗
 
-English | [한국어](./READMOE.kr.md)
+English | [한국어](./docs/kr.md)
 
 `Safe` is a functional utility library for JavaScript/TypeScript that simplifies error handling and asynchronous operations. It provides a fluent chainable API that makes your code more readable and maintainable while ensuring strong type safety.
 
-> "Provides core functionality without the complexity of large libraries like `fp-ts` or `effect.ts`. Recognizing that most developers only use a fraction of what big libraries offer, Safe focuses on just the essentials with an intuitive API. All you need are the fundamental tools for type safety, error handling, and async operations."
+> Provides core functionality without the complexity of large libraries like `fp-ts` or `effect.ts`. Recognizing that most developers only use a fraction of what big libraries offer, Safe focuses on just the essentials with an intuitive API. All you need are the fundamental tools for type safety, error handling, and async operations.
 
 ![chain](./docs/image.png)
 
@@ -21,14 +21,6 @@ English | [한국어](./READMOE.kr.md)
 
 ```bash
 npm install ts-safe
-```
-
-```bash
-pnpm add ts-safe
-```
-
-```bash
-yarn add ts-safe
 ```
 
 ## Basic Usage
