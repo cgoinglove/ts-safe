@@ -30,8 +30,8 @@ import { safe } from 'ts-safe';
 
 const result = safe(10)
   .map((x) => x * 2) // Transform the value (10 -> 20)
-  .effect(logValue) // Side effect with error propagation
-  .catch(handleErrors) // Error recovery if needed
+  .ifOk(logValue) // Side effect with error propagation
+  .ifFail(handleErrors) // Error recovery if needed
   .watch(observeState); // Side effect without error propagation
 
 console.log(result.isOk); // Check if chain contains a success value
@@ -90,20 +90,20 @@ console.log(promiseResult.isOk); //Promise<boolean>
 promiseResult.unwrap() // Promise<Data>
 ```
 
-### effect: Applying Side Effects
+### ifOk: Applying Side Effects on Success
 
 ```typescript
-// Synchronous effect example - note that the return value doesn't change chain value
+// Synchronous ifOk example - note that the return value doesn't change chain value
 const syncResult = safe(42)
-  .effect((value) => {
+  .ifOk((value) => {
     console.log(`Processing value: ${value}`);
     return Boolean(value); // This return value doesn't affect the chain's value
   })
   .unwrap(); // Still returns 42
 
-// Asynchronous effect example - returning a Promise makes chain async
+// Asynchronous ifOk example - returning a Promise makes chain async
 const asyncResult = safe('data')
-  .effect(async (data) => {
+  .ifOk(async (data) => {
   // The chain becomes asynchronous when a Promise is returned
   await saveToDatabase(data);
   console.log('Data saved successfully');
@@ -112,9 +112,9 @@ const asyncResult = safe('data')
 await asyncResult.isOk; // Promise<true>
 const result = await asyncResult.unwrap(); // "data"
 
-// Effect with error propagation example
+// ifOk with error propagation example
 const errorResult = safe('data')
-.effect((data) => {
+.ifOk((data) => {
   throw new Error('Save Error'); // This error propagates through the chain
 });
 console.log(errorResult.isOk); // false
@@ -156,7 +156,7 @@ const syncChain = safe(10)
 console.log(syncChain.unwrap()); // 15 (synchronous return)
 ```
 
-### catch: Recovering from Errors
+### ifFail: Recovering from Errors
 
 ```typescript
 // Error recovery example
@@ -164,7 +164,7 @@ const result = safe(() => {
   throw new Error('Initial error');
 })
   .map((x) => x + 10) // Not executed due to the error
-  .catch((error) => {
+  .ifFail((error) => {
     console.log(`Error recovery: ${error.message}`);
     return 42; // Provide a fallback value
   })
@@ -203,13 +203,13 @@ Transforms the value in the chain. Changes the value type from T to U.
 
 Observes the current state of the chain without affecting it. Receives a result object containing either a value or an error.
 
-#### `effect<U>(effectFn: (value: T ) => U): Safe<U extends Promise<any> ? Promise<T> : T>`
+#### `ifOk<U>(effectFn: (value: T ) => U): Safe<U extends Promise<any> ? Promise<T> : T>`
 
-Applies a side effect to the value. If it returns a Promise, the chain becomes asynchronous. If an error occurs, it propagates to the chain.
+Conditionally applies a side effect ONLY when the Safe contains a success value (isOk = true). Completely skipped if the chain is in an error state. If it returns a Promise, the chain becomes asynchronous. Any errors thrown inside propagate to the chain.
 
-#### `catch<U>(handler: (error: Error) => U): Safe<T|U>`
+#### `ifFail<U>(handler: (error: Error) => U): Safe<T|U>`
 
-Provides a fallback value when the chain contains an error. If it returns a Promise, the chain becomes asynchronous.
+Conditionally executes the handler ONLY when the Safe contains an error (isOk = false). Provides a fallback or recovery value to continue the chain. Completely skipped if the chain is in a success state. If it returns a Promise, the chain becomes asynchronous.
 
 #### `isOk: Promise<boolean> | boolean`
 
@@ -233,7 +233,7 @@ Safe intelligently handles synchronous and asynchronous operations according to 
    - Errors that occur inside do not propagate to the chain
    - Access to both values and errors through the Result object
 
-2. **Methods with side effects** (`effect`, `catch`)
+2. **Methods with side effects** (`ifOk`, `ifFail`)
 
    - Returning a Promise makes the chain asynchronous
    - Errors that occur inside propagate to the chain
@@ -257,10 +257,10 @@ Common validation and observer and retry patterns:
 import { safe,errorIfNull, errorIfEmpty, watchOk, watchError,retry } from 'ts-safe';
 
 safe(userData)
-  .effect(errorIfNull('User data is required')) // valid
+  .ifOk(errorIfNull('User data is required')) // valid
   .map((user) => user.email)
-  .effect(errorIfEmpty('Email cannot be empty'))
-  .effect(retry(sendMail)) // retry 
+  .ifOk(errorIfEmpty('Email cannot be empty'))
+  .ifOk(retry(sendMail)) // retry 
   .watch(watchOk(value => console.log(value))) // obserbe
   .watch(watchError(error => console.error(error)));
 ```

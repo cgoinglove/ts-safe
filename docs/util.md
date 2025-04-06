@@ -11,19 +11,19 @@ import { safe, errorIfNull, errorIfEmpty, errorIfFalsy, errorIf } from 'ts-safe'
 
 // Check for null/undefined values
 safe(userData)
-  .effect(errorIfNull('User data is required'))
+  .ifOk(errorIfNull('User data is required'))
   .map(user => user.email)
   .unwrap();
 
 // Check for empty arrays or strings
 safe(emails)
-  .effect(errorIfEmpty('Email list cannot be empty'))
+  .ifOk(errorIfEmpty('Email list cannot be empty'))
   .map(list => sendEmails(list))
   .unwrap();
 
 // Check using a custom condition
 safe(user)
-  .effect(errorIf((user) => 
+  .ifOk(errorIf((user) => 
     !user.agreeToTerms && 'User must agree to terms'
   ))
   .unwrap();
@@ -76,7 +76,7 @@ safe(transactionData)
 
 // With effect
 safe(userData)
-  .effect(retry(saveToDatabase, { maxTries: 3 }))
+  .ifOk(retry(saveToDatabase, { maxTries: 3 }))
   .unwrap();
 ```
 
@@ -88,9 +88,9 @@ import { safe, errorIfNull, errorIfEmpty, watchOk, watchError, retry  } from 'ts
 function processPayment(paymentData) {
   return safe(paymentData)
     // Validate required data
-    .effect(errorIfNull('Payment data is required'))
+    .ifOk(errorIfNull('Payment data is required'))
     .map(data => data.amount)
-    .effect(errorIf(amount => amount <= 0 && 'Amount must be greater than zero'))
+    .ifOk(errorIf(amount => amount <= 0 && 'Amount must be greater than zero'))
     .map(amount => ({
       amount,
       fee: calculateFee(amount),

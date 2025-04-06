@@ -207,6 +207,68 @@ describe('Safe', () => {
     });
   });
 
+  describe('ifOk', () => {
+    it('should call the ifOk function with the value', () => {
+      const mockFn = vi.fn();
+      const result = safe(42).ifOk(mockFn).unwrap();
+
+      expect(mockFn).toHaveBeenCalledWith(42);
+      expect(result).toBe(42);
+    });
+
+    it('should propagate errors thrown in the ifOk function', () => {
+      const chain = safe(42).ifOk(() => {
+        if (FOURCE) throw new Error('IfOk error');
+      });
+
+      expect(!chain.isOk).toBe(true);
+      expect(() => chain.unwrap()).toThrow('IfOk error');
+    });
+
+    it('should propagate rejected promises from the ifOk function', async () => {
+      const chain = safe(42).ifOk(() => Promise.reject(new Error('IfOk error')));
+
+      await expect(chain.unwrap()).rejects.toThrow('IfOk error');
+    });
+
+    it('should not call the ifOk function if the chain has an error', () => {
+      const mockFn = vi.fn();
+      const chain = safe<number>(() => {
+        throw new Error('Chain error');
+      }).ifOk(mockFn);
+
+      expect(mockFn).not.toHaveBeenCalled();
+      expect(!chain.isOk).toBe(true);
+    });
+
+    it('should handle async ifOk properly', async () => {
+      // Using a setTimeout promise to ensure we're testing real async behavior
+      let ifOkExecuted = false;
+
+      const chain = safe(42).ifOk(() => {
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            ifOkExecuted = true;
+            resolve('different value');
+          }, 10);
+        });
+      });
+
+      // Should wait for the promise to resolve
+      const result = await chain.unwrap();
+      expect(result).toBe(42);
+      expect(ifOkExecuted).toBe(true);
+    });
+
+    it('should maintain original chain value when ifOk returns a different value', () => {
+      const result = safe(42)
+        .ifOk(() => 'different value')
+        .unwrap();
+
+      expect(result).toBe(42);
+    });
+  });
+
   describe('catch', () => {
     it('should replace an error with a recovery value', () => {
       const result = safe<number>(() => {
@@ -251,6 +313,55 @@ describe('Safe', () => {
       const chain = safe<number>(() => {
         throw new Error('Original error');
       }).catch(() => Promise.reject(new Error('Recovery error')));
+
+      await expect(chain.unwrap()).rejects.toThrow('Recovery error');
+    });
+  });
+
+  describe('ifFail', () => {
+    it('should replace an error with a recovery value', () => {
+      const result = safe<number>(() => {
+        throw new Error('Test error');
+      })
+        .ifFail(() => 42)
+        .unwrap();
+
+      expect(result).toBe(42);
+    });
+
+    it('should not affect chains with success values', () => {
+      const result = safe(24)
+        .ifFail(() => 42)
+        .unwrap();
+      expect(result).toBe(24);
+    });
+
+    it('should capture errors thrown in the recovery function', () => {
+      const chain = safe(() => {
+        throw new Error('Original error');
+        return '';
+      }).ifFail(() => {
+        throw new Error('Recovery error');
+        return '';
+      });
+
+      expect(() => chain.unwrap()).toThrow('Recovery error');
+    });
+
+    it('should handle async recovery values', async () => {
+      const result = await safe<number>(() => {
+        throw new Error('Test error');
+      })
+        .ifFail(() => Promise.resolve(42))
+        .unwrap();
+
+      expect(result).toBe(42);
+    });
+
+    it('should handle rejected promises in recovery function', async () => {
+      const chain = safe<number>(() => {
+        throw new Error('Original error');
+      }).ifFail(() => Promise.reject(new Error('Recovery error')));
 
       await expect(chain.unwrap()).rejects.toThrow('Recovery error');
     });

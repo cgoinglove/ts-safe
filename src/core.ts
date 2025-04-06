@@ -39,6 +39,20 @@ export interface Safe<T> {
   watch(consumer: (result: T extends PromiseLike<any> ? SafeResult<Awaited<T>> : SafeResult<T>) => any): Safe<T>;
 
   /**
+   * Applies a side effect to the value ONLY when the Safe contains a success value (isOk = true).
+   * If the Safe is in an error state, this function is completely skipped.
+   * Errors thrown inside this function will propagate through the chain.
+   * If the function returns a Promise, the chain becomes asynchronous.
+   *
+   * @param effectFn Function to apply only on success state
+   * @returns The same Safe with possibly different promise state
+   */
+  ifOk<U>(
+    effectFn: (value: T extends PromiseLike<any> ? Awaited<T> : T) => U
+  ): T extends PromiseLike<any> ? Safe<T> : U extends PromiseLike<any> ? Safe<Promise<T>> : Safe<T>;
+
+  /**
+   * @deprecated Use ifOk instead
    * Applies a side effect to the value.
    * Errors thrown inside this function will propagate through the chain.
    * If the function returns a Promise, the chain becomes asynchronous.
@@ -51,6 +65,19 @@ export interface Safe<T> {
   ): T extends PromiseLike<any> ? Safe<T> : U extends PromiseLike<any> ? Safe<Promise<T>> : Safe<T>;
 
   /**
+   * Recovers from an error by providing a fallback value ONLY when the Safe contains an error (isOk = false).
+   * If there's no error (success state), this function is completely skipped and the original value is kept.
+   * This is intended specifically for error handling and recovery scenarios.
+   *
+   * @param handler Function that returns a fallback value, only called on error state
+   * @returns A Safe with either the original value or recovery value
+   */
+  ifFail<U>(
+    handler: (error: Error) => U
+  ): Safe<T extends PromiseLike<any> ? Promise<Awaited<T> | (U extends PromiseLike<any> ? Awaited<U> : U)> : T | U>;
+
+  /**
+   * @deprecated Use ifFail instead
    * Recovers from an error by providing a fallback value.
    * If there's no error, the original value is kept.
    *
@@ -126,6 +153,19 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
         return prev.value;
       }) as T extends PromiseLike<any> ? Safe<T> : U extends PromiseLike<any> ? Safe<Promise<T>> : Safe<T>;
     },
+    ifOk<U>(
+      effectFn: (value: T extends PromiseLike<any> ? Awaited<T> : T) => U
+    ): T extends PromiseLike<any> ? Safe<T> : U extends PromiseLike<any> ? Safe<Promise<T>> : Safe<T> {
+      return next((prev) => {
+        if (!prev.isOk) throw prev.error;
+        const v = effectFn(prev.value as T extends PromiseLike<any> ? Awaited<T> : T);
+        if (isPromiseLike(v)) {
+          // Wait for the promise to resolve, reject will be handled by next()
+          return v.then(() => prev.value);
+        }
+        return prev.value;
+      }) as T extends PromiseLike<any> ? Safe<T> : U extends PromiseLike<any> ? Safe<Promise<T>> : Safe<T>;
+    },
     watch(consumer: (result: T extends PromiseLike<any> ? SafeResult<Awaited<T>> : SafeResult<T>) => any): Safe<T> {
       return next((prev) => {
         try {
@@ -138,6 +178,18 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
       }) as Safe<T>;
     },
     catch<U>(
+      handler: (error: Error) => U
+    ): Safe<T extends PromiseLike<any> ? Promise<Awaited<T> | (U extends PromiseLike<any> ? Awaited<U> : U)> : T | U> {
+      return next((result) => {
+        if (!result.isOk) {
+          return handler(result.error);
+        }
+        return result.value;
+      }) as Safe<
+        T extends PromiseLike<any> ? Promise<Awaited<T> | (U extends PromiseLike<any> ? Awaited<U> : U)> : T | U
+      >;
+    },
+    ifFail<U>(
       handler: (error: Error) => U
     ): Safe<T extends PromiseLike<any> ? Promise<Awaited<T> | (U extends PromiseLike<any> ? Awaited<U> : U)> : T | U> {
       return next((result) => {

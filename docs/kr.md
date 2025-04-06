@@ -28,8 +28,8 @@ import { safe } from 'ts-safe';
 
 const result = safe(10)
   .map((x) => x * 2) // 값 변환 (10 -> 20)
-  .effect(logValue) // 오류 전파가 있는 부수 효과
-  .catch(handleErrors) // 필요시 오류 복구
+  .ifOk(logValue) // 오류 전파가 있는 부수 효과
+  .ifFail(handleErrors) // 필요시 오류 복구
   .watch(observeState); // 오류 전파 없는 부수 효과
 
 console.log(result.isOk); // 체인이 성공 값을 포함하는지 확인
@@ -90,20 +90,20 @@ console.log(promiseResult.isOk); // Promise<boolean>
 promiseResult.unwrap() // Promise<Data>
 ```
 
-### effect: 부수 효과 적용하기
+### ifOk: 성공 상태에서 부수 효과 적용하기
 
 ```typescript
-// 동기 effect 예제 - 반환 값이 체인 값을 변경하지 않음
+// 동기 ifOk 예제 - 반환 값이 체인 값을 변경하지 않음
 const syncResult = safe(42)
-  .effect((value) => {
+  .ifOk((value) => {
     console.log(`값 처리 중: ${value}`);
     return Boolean(value); // 이 반환 값은 체인의 값에 영향을 미치지 않음
   })
   .unwrap(); // 여전히 42 반환
 
-// 비동기 effect 예제 - Promise 반환 시 체인이 비동기로 전환
+// 비동기 ifOk 예제 - Promise 반환 시 체인이 비동기로 전환
 const asyncResult = safe('data')
-  .effect(async (data) => {
+  .ifOk(async (data) => {
   // Promise가 반환되면 체인이 비동기로 전환됨
   await saveToDatabase(data);
   console.log('데이터 저장 성공');
@@ -112,9 +112,9 @@ const asyncResult = safe('data')
 await asyncResult.isOk; // Promise<true>
 const result = await asyncResult.unwrap(); // "data"
 
-// 오류 전파가 있는 effect 예제
+// 오류 전파가 있는 ifOk 예제
 const errorResult = safe('data')
-.effect((data) => {
+.ifOk((data) => {
   throw new Error('저장 오류'); // 이 오류는 체인을 통해 전파됨
 });
 console.log(errorResult.isOk); // false
@@ -155,7 +155,7 @@ const syncChain = safe(10)
 console.log(syncChain.unwrap()); // 15 (동기 반환)
 ```
 
-### catch: 오류 복구하기
+### ifFail: 오류 상태에서 복구하기
 
 ```typescript
 // 오류 복구 예제
@@ -163,7 +163,7 @@ const result = safe(() => {
   throw new Error('초기 오류');
 })
   .map((x) => x + 10) // 오류로 인해 실행되지 않음
-  .catch((error) => {
+  .ifFail((error) => {
     console.log(`오류 복구: ${error.message}`);
     return 42; // 대체 값 제공
   })
@@ -202,13 +202,13 @@ console.log(fallBackResult.orElse(100)); // 100 (오류 없음)
 
 체인의 현재 상태를 영향 없이 관찰합니다. 값 또는 오류를 포함하는 결과 객체를 받습니다.
 
-#### `effect<U>(effectFn: (value: T ) => U): Safe<U extends Promise<any> ? Promise<T> : T>`
+#### `ifOk<U>(effectFn: (value: T ) => U): Safe<U extends Promise<any> ? Promise<T> : T>`
 
-값에 부수 효과를 적용합니다. Promise를 반환하면 체인이 비동기가 됩니다. 오류가 발생하면 체인으로 전파됩니다.
+오직 Safe가 성공 상태일 때만(isOk = true) 부수 효과를 조건부로 적용합니다. 체인이 오류 상태인 경우 완전히 건너뜁니다. Promise를 반환하면 체인이 비동기가 됩니다. 내부에서 발생한 오류는 체인으로 전파됩니다.
 
-#### `catch<U>(handler: (error: Error) => U): Safe<T|U>`
+#### `ifFail<U>(handler: (error: Error) => U): Safe<T|U>`
 
-체인에 오류가 있을 때 대체 값을 제공합니다. Promise를 반환하면 체인이 비동기가 됩니다.
+오직 Safe가 오류 상태일 때만(isOk = false) 핸들러를 조건부로 실행합니다. 체인을 계속할 수 있도록 대체값이나 복구값을 제공합니다. 체인이 성공 상태인 경우 완전히 무시됩니다. Promise를 반환하면 체인이 비동기가 됩니다.
 
 #### `isOk: Promise<boolean> | boolean`
 
@@ -231,7 +231,7 @@ Safe는 다음 규칙에 따라 동기 및 비동기 작업을 지능적으로 �
    - 내부에서 발생하는 오류는 체인으로 전파되지 않음
    - Result 객체를 통해 값과 오류 모두에 접근 가능
 
-2. **부수 효과가 있는 메서드** (`effect`, `catch`)
+2. **부수 효과가 있는 메서드** (`ifOk`, `ifFail`)
    - Promise 반환 시 체인이 비동기로 전환
    - 내부에서 발생하는 오류는 체인으로 전파됨
 
@@ -253,10 +253,10 @@ Safe는 기능을 확장하는 여러 강력한 모듈을 제공합니다:
 import { safe, errorIfNull, errorIfEmpty, watchOk, watchError, retry } from 'ts-safe';
 
 safe(userData)
-  .effect(errorIfNull('사용자 데이터가 필요합니다')) // 유효성 검사
+  .ifOk(errorIfNull('사용자 데이터가 필요합니다')) // 유효성 검사
   .map((user) => user.email)
-  .effect(errorIfEmpty('이메일은 비워둘 수 없습니다'))
-  .effect(retry(sendMail)) // 재시도
+  .ifOk(errorIfEmpty('이메일은 비워둘 수 없습니다'))
+  .ifOk(retry(sendMail)) // 재시도
   .watch(watchOk(value => console.log(value))) // 값 관찰
   .watch(watchError(error => console.error(error))); // 오류 관찰
 ```
