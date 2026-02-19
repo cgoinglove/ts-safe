@@ -1,3 +1,2 @@
-export * from './valid';
-export * from './watch';
-export * from './retry';
+export { errorIf, errorIfEmpty, errorIfFalsy, errorIfNull } from './valid';
+export { retry } from './retry';

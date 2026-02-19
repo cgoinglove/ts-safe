@@ -35,7 +35,7 @@ describe('safePipe', () => {
     expect(result.isOk).toBe(false);
 
     // 에러 복구 테스트
-    const recovered = result.catch(() => 'Recovered');
+    const recovered = result.recover(() => 'Recovered');
     expect(recovered.unwrap()).toBe('Recovered');
   });
 
@@ -108,7 +108,7 @@ describe('safePipe', () => {
 
     const result = piped(5)
       .map((result) => `The number is ${result}`)
-      .watch((str) => {
+      .peekOk((str) => {
         // Side effect
         expect(str).toContain('12');
       });

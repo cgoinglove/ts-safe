@@ -1,4 +1,4 @@
-import { safeValue, Safe } from '../src/core';
+import { safeValue, Safe } from './core';
 
 type NonDistributive<T> = [T] extends [any] ? T : never;
 

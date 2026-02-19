@@ -1,19 +1,61 @@
-# 🔗 ts-safe 🔗
+# ts-safe
 
-`Safe`는 JavaScript/TypeScript를 위한 함수형 유틸리티 라이브러리로, 오류 처리와 비동기 작업을 단순화합니다. 코드의 가독성과 유지보수성을 향상시키는 동시에 강력한 타입 안전성을 보장하는 유연한 체이닝 API를 제공합니다.
+[![npm](https://img.shields.io/npm/v/ts-safe)](https://www.npmjs.com/package/ts-safe)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/ts-safe)](https://bundlephobia.com/package/ts-safe)
+[![zero dependencies](https://img.shields.io/badge/dependencies-0-green)](https://www.npmjs.com/package/ts-safe)
 
-> Safe는 `fp-ts`나 `effect.ts` 같은 대형 라이브러리의 복잡성 없이 핵심 기능을 제공합니다. 대부분의 개발자들이 큰 라이브러리의 일부 기능만 사용한다는 점을 인식하여, Safe는 직관적인 API로 필수적인 기능에만 집중합니다. 타입 안전성, 오류 처리, 비동기 작업을 위한 기본 도구만 필요합니다.
+TypeScript를 위한 타입 안전 에러 핸들링 — Promise 자동 추론 지원.
 
-![체인](./image.png)
+```ts
+const name = await safe(() => fetch('/api/user'))
+  .map(res => res.json())           // 변환 — 값이 바뀜
+  .tap(user => saveToDb(user))      // 사이드 이펙트 — 체인에 영향, 값 보존
+  .peekOk(user => console.log(user))// 관찰 — 체인에 영향 없음, 보기만 함
+  .recover(() => defaultUser)       // 복구 — 에러를 대체값으로 교체
+  .map(user => user.name)           // 변환 — 타입이 자동으로 흐름
+  .unwrap();                        // 추출 — Promise<string>
+```
 
-## 특징
+## 왜 ts-safe인가?
 
-- **안정적인 타입 안전성**: 작업이 동기적이든 비동기적이든 일관된 타입 안전성 제공
-- **체이닝 API**: 더 깔끔한 코드 구조를 위한 직관적인 메서드 체이닝 지원
-- **순수 함수와 부수 효과 분리**: 부수 효과가 있는 메서드와 없는 메서드를 명확히 구분
-- **안전한 체이닝**: 오류가 발생해도 체인 실행을 계속할 수 있음
-- **유연한 오류 처리**: `unwrap()`을 통해 오류 표면화 시점 제어 또는 `orElse()`로 대체값 제공
-- **함수 구성**: Pipe 모듈을 통한 재사용 가능한 함수 파이프라인 생성
+TypeScript용 Result/Either 라이브러리는 이미 많습니다 — [neverthrow](https://github.com/supermacro/neverthrow), [fp-ts](https://github.com/gcanti/fp-ts), [Effect](https://github.com/Effect-TS/effect). 하지만 새로운 패러다임을 배워야 하거나, sync → async 경계를 깔끔하게 처리하지 못합니다.
+
+**ts-safe는 다릅니다:**
+
+### 1. Promise가 그냥 동작함
+
+대부분의 Result 라이브러리는 sync/async 전용 API를 분리하거나 Task/Effect 모나드로 감싸야 합니다. ts-safe는 Promise 전환을 **타입 레벨에서 자동 처리**합니다:
+
+```ts
+safe(1)                          // Safe<number>
+  .map(x => x + 1)              // Safe<number>          — 여전히 sync
+  .map(async x => fetchData(x)) // Safe<Promise<Data>>   — 이제 async
+  .map(data => data.name)        // Safe<Promise<string>> — async 유지
+  .unwrap()                      // Promise<string>       — await 가능
+```
+
+`TaskEither`도, `ResultAsync`도, 별도 API도 필요 없습니다. 타입 시스템이 알아서 추적합니다.
+
+### 2. 최소 API, 최대 명확성
+
+모든 메서드 이름이 두 가지를 알려줍니다: **무엇을 하는지**와 **체인에 영향이 있는지**.
+
+```
+체인에 영향 있음:    map · flatMap · tap · recover
+체인에 영향 없음:    peek · peekOk · peekError
+결과 추출:          unwrap · orElse · match · isOk
+```
+
+이게 전부입니다. `chain`, `andThen`, `mapLeft`, `bimap`, `fold`, `tryCatch`, `fromEither`, `taskify` 같은 건 없습니다.
+
+### 3. 초경량
+
+| 라이브러리 | 번들 (min + gzip) | 의존성 |
+|---------|---:|:---:|
+| **ts-safe** | **~1 KB** | **0** |
+| neverthrow | ~2 KB | 0 |
+| fp-ts | ~30 KB | 0 |
+| Effect | ~50 KB+ | 다수 |
 
 ## 설치
 
@@ -21,262 +63,240 @@
 npm install ts-safe
 ```
 
-## 기본 사용법
+## 빠른 시작
 
-```typescript
+```ts
 import { safe } from 'ts-safe';
 
-const result = safe(10)
-  .map((x) => x * 2) // 값 변환 (10 -> 20)
-  .ifOk(logValue) // 오류 전파가 있는 부수 효과
-  .ifFail(handleErrors) // 필요시 오류 복구
-  .watch(observeState); // 오류 전파 없는 부수 효과
+// 값 래핑
+safe(42)                        // Safe<number>
 
-console.log(result.isOk); // 체인이 성공 값을 포함하는지 확인
-console.log(result.unwrap()); // 최종 값 추출 (오류가 있으면 예외 발생)
+// 함수 래핑 — 에러가 throw되지 않고 캡처됨
+safe(() => JSON.parse(input))   // Safe<any>
+
+// 체인 연결
+safe(() => riskyOperation())
+  .map(value => transform(value))       // 값 변환
+  .tap(value => sideEffect(value))      // 사이드 이펙트 — 에러가 체인을 끊음
+  .peekOk(value => console.log(value))  // 관찰 — 에러가 무시됨
+  .recover(err => fallbackValue)        // 에러 복구
+  .unwrap()                             // 결과 추출
 ```
 
-### 체인 시작하기
+## API
 
-```typescript
-import { safe } from 'ts-safe';
+메서드는 **체인에 미치는 영향**에 따라 분류됩니다:
 
-// 값으로 시작
-const s1 = safe(100);
-
-// 함수로 시작
-const s2 = safe(() => {
-  return 100;
-});
-
-// 값 없이 시작
-const s3 = safe();
-
-s1.unwrap() === s2.unwrap()
-s3.unwarp() === undefined
+```
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│  변환             map(fn)       값 → 새 값                    │
+│  (값이 바뀜)      flatMap(fn)   값 → Safe → 평탄화             │
+│                                                              │
+│  사이드 이펙트    tap(fn)       성공 시 실행, 값 보존            │
+│  (체인에 영향)    recover(fn)   에러 시 실행, 대체값 제공         │
+│                                                              │
+│  관찰             peek(fn)      SafeResult 관찰, 체인 무영향    │
+│  (체인에 무영향)  peekOk(fn)    성공 값만 관찰, 체인 무영향       │
+│                   peekError(fn) 에러만 관찰, 체인 무영향         │
+│                                                              │
+│  추출             unwrap()      값 추출 또는 throw              │
+│                   orElse(v)     값 추출 또는 기본값              │
+│                   match({ok,err}) 패턴 매칭                    │
+│                   isOk          boolean (또는 Promise<boolean>)│
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### map: 값 변환하기
+### `map(fn)` — 변환
 
-```typescript
-// 체인에서 값 변환 예제
-const result = safe(5)
-  .map((x) => x * 2) // 5 -> 10
-  .map((x) => x + 3) // 10 -> 13
-  .map((x) => `값은 ${x}입니다`); // 13 -> "값은 13입니다"
+값을 변환합니다. 에러 상태에서는 스킵됩니다.
 
-console.log(result.isOk); // true
-console.log(result.unwrap()); // "값은 13입니다"
-
-// 오류가 있으면 후속 map 작업은 실행되지 않음
-const errorResult = safe(1)
-  .map((x) => {
-    throw new Error('오류 발생');
-  })
-  .map((x) => x * 2); // 오류로 인해 이 변환은 건너뜀
-
-console.log(errorResult.isOk); // false
-
-try {
-  errorResult.unwrap(); // 오류 발생
-} catch (e) {
-  console.error(e.message); // "오류 발생"
-}
-
-const promiseResult = safe(id)
-            .map(async (id) => fetchData(id));
-
-console.log(promiseResult.isOk); // Promise<boolean>
-promiseResult.unwrap() // Promise<Data>
+```ts
+safe(2).map(x => x * 3).unwrap() // 6
 ```
 
-### ifOk: 성공 상태에서 부수 효과 적용하기
+### `flatMap(fn)` — Safe를 반환하는 변환
 
-```typescript
-// 동기 ifOk 예제 - 반환 값이 체인 값을 변경하지 않음
-const syncResult = safe(42)
-  .ifOk((value) => {
-    console.log(`값 처리 중: ${value}`);
-    return Boolean(value); // 이 반환 값은 체인의 값에 영향을 미치지 않음
-  })
-  .unwrap(); // 여전히 42 반환
+`Safe`를 반환하는 함수로 변환합니다. 결과를 평탄화합니다.
 
-// 비동기 ifOk 예제 - Promise 반환 시 체인이 비동기로 전환
-const asyncResult = safe('data')
-  .ifOk(async (data) => {
-  // Promise가 반환되면 체인이 비동기로 전환됨
-  await saveToDatabase(data);
-  console.log('데이터 저장 성공');
-});
-
-await asyncResult.isOk; // Promise<true>
-const result = await asyncResult.unwrap(); // "data"
-
-// 오류 전파가 있는 ifOk 예제
-const errorResult = safe('data')
-.ifOk((data) => {
-  throw new Error('저장 오류'); // 이 오류는 체인을 통해 전파됨
-});
-console.log(errorResult.isOk); // false
-// errorResult.unwrap(); // '저장 오류' 예외 발생
+```ts
+const parse = (s: string) => safe(() => JSON.parse(s));
+safe('{"a":1}').flatMap(parse).unwrap() // { a: 1 }
 ```
 
-### watch: 값 관찰하기
+### `tap(fn)` — 성공 시 사이드 이펙트
 
-```typescript
-// watch는 체인에 영향을 주지 않고 값과 오류를 관찰
-const result = safe(42)
-  .watch((result) => {
-    const {isOk, error, value} = result as SafeResult;
+성공 시 함수를 실행합니다. **원래 값은 보존**되고 (반환값 무시), 함수가 **throw하면 에러가 전파**됩니다. Promise를 반환하면 체인이 async로 전환됩니다.
 
-    if (result.isOk) {
-      console.log(`현재 값: ${result.value}`); // "현재 값: 42"
-    } else {
-      console.error(`오류 발생: ${result.error.message}`);
-    }
-    // 여기서 발생한 오류는 체인에 영향을 주지 않음
-    throw new Error('이 오류는 무시됨!');
-  })
-  .map((x) => x * 2); // 42 -> 84
-
-console.log(result.isOk); // true
-console.log(result.unwrap()); // 84
-
-// watch에서 Promise 반환은 체인의 동기성에 영향을 주지 않음
-const syncChain = safe(10)
-  .watch(async (result) => {
-    if (result.isOk) {
-      await someAsyncOperation();
-      console.log('비동기 작업 완료');
-    }
-  })
-  .map((x) => x + 5); // 체인은 동기 상태 유지
-
-console.log(syncChain.unwrap()); // 15 (동기 반환)
+```ts
+safe(user)
+  .tap(u => saveToDb(u))     // throw하면 → 에러 상태
+  .tap(u => sendEmail(u))    // 위에서 throw했으면 스킵
+  .map(u => u.name)
+  .unwrap()
 ```
 
-### ifFail: 오류 상태에서 복구하기
+### `recover(fn)` — 에러 복구
 
-```typescript
-// 오류 복구 예제
-const result = safe(() => {
-  throw new Error('초기 오류');
-})
-  .map((x) => x + 10) // 오류로 인해 실행되지 않음
-  .ifFail((error) => {
-    console.log(`오류 복구: ${error.message}`);
-    return 42; // 대체 값 제공
-  })
-  .map((x) => x * 2); // 복구된 값(42)에 적용
+에러 상태에서 대체 값을 제공합니다. 복구 후 체인은 성공 상태로 계속됩니다.
 
-console.log(result.unwrap()); // 84
-
-// 대체값
-const fallBackResult = safe(() => {
-  throw new Error('비동기 복구 필요');
-});
-
-console.log(fallBackResult.isOk); // false
-console.log(fallBackResult.orElse(100)); // 100 (오류 없음)
+```ts
+safe(() => { throw new Error('실패') })
+  .recover(err => '기본값')   // 이제 성공 상태
+  .map(v => v.toUpperCase())
+  .unwrap()                    // '기본값'
 ```
 
-## API 참조
+### `peek(fn)` / `peekOk(fn)` / `peekError(fn)` — 관찰
 
-### 핵심 함수
+순수 관찰. **내부에서 무슨 일이 일어나도 체인에 영향 없음** — throw된 에러는 무시, Promise도 무시, 반환값도 무시. 체인이 그대로 통과합니다.
 
-#### `safe<T>(value: T): Safe<T>`
+로깅, 메트릭, 디버깅 등 실패해도 흐름을 멈추면 안 되는 작업에 사용합니다.
 
-#### `safe<T>(fn: () => T): Safe<T>`
-
-#### `safe(): Safe<undefined>`
-
-값이나 함수를 Safe로 래핑합니다. 함수가 제공되면 함수를 실행하고 결과를 Safe에 저장합니다.
-
-### 주요 메서드
-
-#### `map<U>(transform: (value: T ) => U): Safe<T extends Promise<any> ? Promise<U> : U>`
-
-체인의 값을 변환합니다. 값 타입을 T에서 U로 변경합니다.
-
-#### `watch(consumer: (result: SafeResult<T) => any): Safe<T>`
-
-체인의 현재 상태를 영향 없이 관찰합니다. 값 또는 오류를 포함하는 결과 객체를 받습니다.
-
-#### `ifOk<U>(effectFn: (value: T ) => U): Safe<U extends Promise<any> ? Promise<T> : T>`
-
-오직 Safe가 성공 상태일 때만(isOk = true) 부수 효과를 조건부로 적용합니다. 체인이 오류 상태인 경우 완전히 건너뜁니다. Promise를 반환하면 체인이 비동기가 됩니다. 내부에서 발생한 오류는 체인으로 전파됩니다.
-
-#### `ifFail<U>(handler: (error: Error) => U): Safe<T|U>`
-
-오직 Safe가 오류 상태일 때만(isOk = false) 핸들러를 조건부로 실행합니다. 체인을 계속할 수 있도록 대체값이나 복구값을 제공합니다. 체인이 성공 상태인 경우 완전히 무시됩니다. Promise를 반환하면 체인이 비동기가 됩니다.
-
-#### `isOk: Promise<boolean> | boolean`
-
-체인이 성공 값을 포함하는지 나타내는 속성입니다. 비동기 체인의 경우 Promise를 반환합니다.
-
-#### `unwrap(): T`
-
-체인에서 최종 값을 추출합니다. 체인에 오류가 있으면 예외가 발생합니다.
-
-#### `orElse<U>(fallbackValue: U): T | U`
-
-체인에서 값을 추출하거나 오류가 있는 경우 제공된 대체 값을 반환합니다. unwrap()과 달리 이 메서드는 예외를 발생시키지 않습니다.
-
-## 동기/비동기 처리 및 오류 전파
-
-Safe는 다음 규칙에 따라 동기 및 비동기 작업을 지능적으로 처리합니다:
-
-1. **부수 효과가 없는 메서드** (`watch`)
-   - Promise 반환은 체인의 동기성에 영향을 주지 않음
-   - 내부에서 발생하는 오류는 체인으로 전파되지 않음
-   - Result 객체를 통해 값과 오류 모두에 접근 가능
-
-2. **부수 효과가 있는 메서드** (`ifOk`, `ifFail`)
-   - Promise 반환 시 체인이 비동기로 전환
-   - 내부에서 발생하는 오류는 체인으로 전파됨
-
-3. **값 변환 메서드** (`map`)
-   - Promise 반환 시 체인이 비동기로 전환
-   - 내부에서 발생하는 오류는 체인으로 전파됨
-
-## 추가 모듈
-
-Safe는 기능을 확장하는 여러 강력한 모듈을 제공합니다:
-
-### 🛠️ util: 유용한 유틸리티
-
-[전체 문서](./util.md)
-
-일반적인 유효성 검사, 관찰자 및 재시도 패턴:
-
-```typescript
-import { safe, errorIfNull, errorIfEmpty, watchOk, watchError, retry } from 'ts-safe';
-
-safe(userData)
-  .ifOk(errorIfNull('사용자 데이터가 필요합니다')) // 유효성 검사
-  .map((user) => user.email)
-  .ifOk(errorIfEmpty('이메일은 비워둘 수 없습니다'))
-  .ifOk(retry(sendMail)) // 재시도
-  .watch(watchOk(value => console.log(value))) // 값 관찰
-  .watch(watchError(error => console.error(error))); // 오류 관찰
+```ts
+safe(result)
+  .peekOk(v => console.log('성공:', v))    // 성공 시에만
+  .peekError(e => console.error('에러:', e))// 에러 시에만
+  .peek(r => metrics.record(r.isOk))        // 항상 실행
+  .unwrap()
 ```
 
-### 📦 pipe: 쉬운 함수 구성
+`tap`과의 차이: 로깅 서비스가 throw하면 `tap`은 체인을 끊고, `peek`은 에러를 삼키고 계속합니다.
 
-[전체 문서](./pipe.md)
+```ts
+// tap — 에러 전파 (중요한 사이드 이펙트용)
+safe(data).tap(d => saveToDb(d))      // DB 실패 → 체인 끊김 ✓
 
-데이터를 순차적으로 처리하는 재사용 가능한 함수 파이프라인 생성:
+// peekOk — 에러 무시 (선택적 사이드 이펙트용)
+safe(data).peekOk(d => analytics(d))  // 분석 실패 → 체인 계속 ✓
+```
 
-```typescript
-import { safe } from 'ts-safe';
+### `match({ ok, err })` — 패턴 매칭
 
-const processNumber = safe.pipe(
-  (num: number) => num * 2,
-  (num: number) => num + 10,
-  (num: number) => `결과: ${num}`
+성공/에러 두 경우를 모두 명시적으로 처리합니다. 핸들러의 결과를 반환합니다.
+
+```ts
+const message = safe(() => fetchUser())
+  .map(user => user.name)
+  .match({
+    ok:  name  => `안녕하세요, ${name}!`,
+    err: error => `실패: ${error.message}`
+  });
+```
+
+### `unwrap()` / `orElse(fallback)` — 추출
+
+```ts
+safe(42).unwrap()                                     // 42
+safe(() => { throw new Error() }).unwrap()            // throws!
+
+safe(42).orElse('기본값')                              // 42
+safe(() => { throw new Error() }).orElse('기본값')     // '기본값' (throw 안 함)
+```
+
+### `isOk` — 상태 확인
+
+```ts
+safe(42).isOk                              // true
+safe(() => { throw new Error() }).isOk     // false
+await safe(1).map(async x => x).isOk       // Promise<true>
+```
+
+## Promise 추론
+
+ts-safe의 핵심 차별점. 별도 문법 없이 sync/async 상태를 **타입 레벨에서 추적**합니다.
+
+### 동작 방식
+
+| 코드 | 체인 타입 | 이유 |
+|---|---|---|
+| `safe(42)` | `Safe<number>` | sync 값 |
+| `.map(x => x + 1)` | `Safe<number>` | sync 콜백 → sync 유지 |
+| `.map(async x => fetch(x))` | `Safe<Promise<Response>>` | async 콜백 → async 전환 |
+| `.map(res => res.json())` | `Safe<Promise<any>>` | 콜백은 await된 값을 받음 |
+| `.tap(async x => log(x))` | `Safe<Promise<T>>` | async 사이드 이펙트 → async 전환 |
+| `.peek(async x => log(x))` | `Safe<T>` | peek은 **절대** async 전환 안 함 |
+
+### 핵심 규칙
+
+> 체인이 async면, 콜백은 **await된 값**을 받습니다 — Promise가 아닌.
+
+```ts
+safe(1)
+  .map(async x => x + 1)     // 콜백은 Promise<number> 반환
+  .map(x => x * 10)           // x는 number (Promise<number>가 아님)
+  .unwrap()                    // Promise<number>
+```
+
+sync처럼 보이는 변환을 작성하세요. ts-safe가 await를 처리합니다.
+
+### 다른 라이브러리와 비교
+
+```ts
+// neverthrow — 별도의 ResultAsync + 불편한 래핑 필요
+const result = ResultAsync.fromPromise(fetch('/api'), handleErr)
+  .andThen(res => ResultAsync.fromPromise(res.json(), handleErr))
+  .map(data => data.name);
+
+// ts-safe — 그냥 쓰면 됨
+const result = safe(() => fetch('/api'))
+  .map(res => res.json())
+  .map(data => data.name);
+```
+
+## 유틸리티
+
+### 검증 함수
+
+`map`과 함께 쓰는 검증 함수. 유효하면 값을 반환, 아니면 throw.
+
+```ts
+import { safe, errorIfNull, errorIfEmpty, errorIf } from 'ts-safe';
+
+safe(userInput)
+  .map(errorIfNull('입력이 필요합니다'))
+  .map(errorIfEmpty('비어있으면 안 됩니다'))
+  .map(errorIf(v => v.length < 3 ? '너무 짧습니다' : false))
+  .unwrap()
+```
+
+| 함수 | throw 조건 |
+|---|---|
+| `errorIfNull(msg?)` | `null` 또는 `undefined` |
+| `errorIfFalsy(msg?)` | falsy 값 |
+| `errorIfEmpty(msg?)` | `.length === 0` |
+| `errorIf(predicate)` | predicate가 문자열 반환 시 |
+
+### 재시도
+
+지수 백오프를 지원하는 자동 재시도:
+
+```ts
+import { safe, retry } from 'ts-safe';
+
+await safe(url)
+  .map(retry(fetchData, {
+    maxTries: 3,    // 기본값: 3
+    delay: 1000,    // 기본값: 1000ms
+    backoff: true   // 지수: 1초, 2초, 4초
+  }))
+  .unwrap();
+```
+
+### Pipe
+
+에러 핸들링이 내장된 함수 조합:
+
+```ts
+const getUsername = safe.pipe(
+  (id: number) => fetchUser(id),  // number → User
+  user => user.name,               // User → string
+  name => name.toUpperCase()       // string → string
 );
 
-console.log(processNumber(5).unwrap()); // "결과: 20"
+getUsername(1).unwrap()    // 'ALICE'
+getUsername(999).orElse('ANONYMOUS')
 ```
 
 ## 라이센스

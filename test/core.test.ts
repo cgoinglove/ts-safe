@@ -1,507 +1,678 @@
-import { describe, it, expect, vi } from 'vitest';
-import { safeValue, safeEmpty } from '../src/core';
+import { describe, expect, it, vi } from 'vitest';
 import { safe } from '../src';
-
-const FOURCE: boolean = true;
+import { safeEmpty, safeExec, safeValue } from '../src/core';
 
 describe('Safe', () => {
-  describe('Constructor functions', () => {
-    it('safeValue should create a Safe with the given value', () => {
-      const result = safeValue(42).unwrap();
+  // ─── Constructor ───────────────────────────────────────────────
 
-      expect(result).toBe(42);
-    });
-    it('safeEmpty should create a Safe with undefined value', () => {
-      const result = safeEmpty().unwrap();
-      expect(result).toBeUndefined();
+  describe('Constructor', () => {
+    it('safeValue: wraps a value', () => {
+      expect(safeValue(42).unwrap()).toBe(42);
     });
 
-    it('safe should handle different parameter types', () => {
+    it('safeValue: wraps null', () => {
+      expect(safeValue(null).unwrap()).toBe(null);
+    });
+
+    it('safeValue: wraps an object', () => {
+      const obj = { a: 1, b: 'hello' };
+      expect(safeValue(obj).unwrap()).toEqual(obj);
+    });
+
+    it('safeExec: wraps function result', () => {
+      expect(safeExec(() => 42).unwrap()).toBe(42);
+    });
+
+    it('safeExec: captures thrown error', () => {
+      const result = safeExec(() => {
+        throw new Error('fail');
+      });
+      expect(() => result.unwrap()).toThrow('fail');
+    });
+
+    it('safeEmpty: creates undefined Safe', () => {
+      expect(safeEmpty().unwrap()).toBeUndefined();
+    });
+
+    it('safe(value): wraps a value', () => {
       expect(safe(42).unwrap()).toBe(42);
-      expect(safe(() => 42).unwrap()).toBe(42);
+    });
+
+    it('safe(fn): wraps function result', () => {
+      expect(safe(() => 'hello').unwrap()).toBe('hello');
+    });
+
+    it('safe(fn): captures thrown error', () => {
+      expect(() =>
+        safe(() => {
+          throw new Error('fail');
+        }).unwrap()
+      ).toThrow('fail');
+    });
+
+    it('safe(): creates undefined Safe', () => {
       expect(safe().unwrap()).toBeUndefined();
     });
   });
 
+  // ─── map ───────────────────────────────────────────────────────
+
   describe('map', () => {
-    it('should transform a success value', () => {
-      const result = safe(2)
-        .map((x) => x * 2)
-        .catch(async () => '')
+    it('transforms the value', () => {
+      expect(
+        safe(2)
+          .map((x) => x * 3)
+          .unwrap()
+      ).toBe(6);
+    });
+
+    it('chains multiple maps', () => {
+      expect(
+        safe(1)
+          .map((x) => x + 1)
+          .map((x) => x * 10)
+          .unwrap()
+      ).toBe(20);
+    });
+
+    it('skips transform on error', () => {
+      const fn = vi.fn();
+      safe(() => {
+        throw new Error('fail');
+      }).map(fn);
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('propagates error from transform', () => {
+      expect(() =>
+        safe(1)
+          .map(() => {
+            throw new Error('map fail');
+          })
+          .unwrap()
+      ).toThrow('map fail');
+    });
+
+    it('handles async transform', async () => {
+      const result = await safe(1)
+        .map(async (x) => x + 1)
         .unwrap();
-      expect(result).toBe(4);
+      expect(result).toBe(2);
     });
 
-    it('should propagate errors', () => {
-      const chain = safe(() => {
-        if (FOURCE) throw new Error('Initial error');
-      }).map((x) => x);
-      expect(!chain.isOk).toBe(true);
-    });
-
-    it('should capture errors thrown in the transform function', () => {
-      const chain = safe(2).map(() => {
-        throw new Error('Transform error');
-        return '';
-      });
-      expect(!chain.isOk).toBe(true);
-      expect(() => chain.unwrap()).toThrow('Transform error');
-    });
-
-    it('should handle promises correctly', async () => {
-      const result = await safe(2)
-        .map((x) => Promise.resolve(x * 2))
-        .unwrap();
-
-      expect(result).toBe(4);
-    });
-
-    it('should handle async functions correctly', async () => {
-      const result = await safe(2)
-        .map(async (x) => x * 2)
-        .unwrap();
-      expect(result).toBe(4);
-    });
-
-    it('should handle promise rejections', async () => {
-      const chain = safe(2).map(() => Promise.reject(new Error('Promise error')));
-      await expect(chain.unwrap()).rejects.toThrow('Promise error');
+    it('handles rejected promise in transform', async () => {
+      await expect(
+        safe(1)
+          .map(() => Promise.reject(new Error('async fail')))
+          .unwrap()
+      ).rejects.toThrow('async fail');
     });
   });
+
+  // ─── flatMap ───────────────────────────────────────────────────
 
   describe('flatMap', () => {
-    it('should flatten nested Safes', () => {
-      const result = safe(2)
-        .flatMap((x) => safe(x * 2))
+    it('flattens nested Safe', () => {
+      expect(
+        safe(1)
+          .flatMap((x) => safe(x + 1))
+          .unwrap()
+      ).toBe(2);
+    });
+
+    it('propagates error from outer Safe', () => {
+      const fn = vi.fn(() => safe(1));
+      safe(() => {
+        throw new Error('outer');
+      }).flatMap(fn);
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('propagates error from inner Safe', () => {
+      expect(() =>
+        safe(1)
+          .flatMap(() =>
+            safe(() => {
+              throw new Error('inner');
+            })
+          )
+          .unwrap()
+      ).toThrow('inner');
+    });
+  });
+
+  // ─── tap ───────────────────────────────────────────────────────
+
+  describe('tap', () => {
+    it('executes side effect with the value', () => {
+      const fn = vi.fn();
+      safe(42).tap(fn).unwrap();
+      expect(fn).toHaveBeenCalledWith(42);
+    });
+
+    it('preserves the original value (return value ignored)', () => {
+      expect(
+        safe(42)
+          .tap(() => 999)
+          .unwrap()
+      ).toBe(42);
+    });
+
+    it('skips on error state', () => {
+      const fn = vi.fn();
+      safe(() => {
+        throw new Error('fail');
+      }).tap(fn);
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('propagates thrown error to the chain', () => {
+      expect(() =>
+        safe(42)
+          .tap(() => {
+            throw new Error('tap fail');
+          })
+          .unwrap()
+      ).toThrow('tap fail');
+    });
+
+    it('handles async side effect', async () => {
+      const fn = vi.fn(async () => {});
+      const value = await safe(42).tap(fn).unwrap();
+      expect(fn).toHaveBeenCalledWith(42);
+      expect(value).toBe(42);
+    });
+
+    it('propagates rejected promise', async () => {
+      await expect(
+        safe(42)
+          .tap(() => Promise.reject(new Error('async tap fail')))
+          .unwrap()
+      ).rejects.toThrow('async tap fail');
+    });
+
+    it('preserves value even with async side effect', async () => {
+      const value = await safe(42)
+        .tap(async () => 'ignored')
         .unwrap();
-      expect(result).toBe(4);
+      expect(value).toBe(42);
+    });
+  });
+
+  // ─── recover ───────────────────────────────────────────────────
+
+  describe('recover', () => {
+    it('provides recovery value on error', () => {
+      const result = safe(() => {
+        throw new Error('fail');
+      })
+        .recover(() => 'recovered')
+        .unwrap();
+      expect(result).toBe('recovered');
     });
 
-    it('should propagate errors from the outer chain', () => {
-      const chain = safe<number>(() => {
-        throw new Error('Outer error');
-      }).flatMap((x) => safe(x * 2));
-      expect(!chain.isOk).toBe(true);
+    it('skips on success state', () => {
+      const fn = vi.fn();
+      safe(42).recover(fn);
+      expect(fn).not.toHaveBeenCalled();
     });
 
-    it('should propagate errors from the inner chain', () => {
-      const chain = safe(2).flatMap(() =>
+    it('receives the error object', () => {
+      const fn = vi.fn(() => 'default');
+      safe(() => {
+        throw new Error('my error');
+      })
+        .recover(fn)
+        .unwrap();
+      expect(fn).toHaveBeenCalledWith(expect.objectContaining({ message: 'my error' }));
+    });
+
+    it('chain continues in success state after recovery', () => {
+      const result = safe(() => {
+        throw new Error('fail');
+      })
+        .recover(() => 10)
+        .map((x) => (x as number) * 2)
+        .unwrap();
+      expect(result).toBe(20);
+    });
+
+    it('handles async recovery', async () => {
+      const result = await safe(() => {
+        throw new Error('fail');
+      })
+        .recover(async () => 'async recovered')
+        .unwrap();
+      expect(result).toBe('async recovered');
+    });
+
+    it('propagates error if recovery throws', () => {
+      expect(() =>
         safe(() => {
-          throw new Error('Inner error');
-          return '';
+          throw new Error('first');
         })
-      );
-      expect(!chain.isOk).toBe(true);
-    });
-
-    it('should handle async operations properly', async () => {
-      const result = await safe(2)
-        .flatMap((x) => safe(Promise.resolve(x * 2)))
-        .unwrap();
-      expect(result).toBe(4);
+          .recover(() => {
+            throw new Error('recovery failed');
+          })
+          .unwrap()
+      ).toThrow('recovery failed');
     });
   });
 
-  describe('watch', () => {
-    it('should ignore errors thrown in the consumer function', () => {
+  // ─── peek ──────────────────────────────────────────────────────
+
+  describe('peek', () => {
+    it('observes success state', () => {
+      const fn = vi.fn();
+      safe(42).peek(fn).unwrap();
+      expect(fn).toHaveBeenCalledWith(expect.objectContaining({ isOk: true, value: 42 }));
+    });
+
+    it('observes error state', () => {
+      const fn = vi.fn();
+      safe(() => {
+        throw new Error('fail');
+      }).peek(fn);
+      expect(fn).toHaveBeenCalledWith(expect.objectContaining({ isOk: false }));
+      expect(fn.mock.calls[0][0].error).toBeInstanceOf(Error);
+    });
+
+    it('ignores errors thrown in callback', () => {
+      expect(
+        safe(42)
+          .peek(() => {
+            throw new Error('peek fail');
+          })
+          .unwrap()
+      ).toBe(42);
+    });
+
+    it('ignores promise rejections in callback', () => {
       const result = safe(42)
-        .watch(() => {
-          throw new Error('Should be ignored');
+        .peek(() => Promise.reject(new Error('async peek fail')))
+        .unwrap();
+      expect(result).toBe(42);
+    });
+
+    it('does not convert chain to async even with promise return', () => {
+      const result = safe(42)
+        .peek(() => Promise.resolve('ignored'))
+        .unwrap();
+      expect(result).toBe(42);
+    });
+
+    it('preserves error state', () => {
+      expect(() =>
+        safe(() => {
+          throw new Error('fail');
         })
-        .unwrap();
+          .peek(() => {})
+          .unwrap()
+      ).toThrow('fail');
+    });
+  });
 
-      expect(result).toBe(42);
+  // ─── peekOk ────────────────────────────────────────────────────
+
+  describe('peekOk', () => {
+    it('observes success value', () => {
+      const fn = vi.fn();
+      safe(42).peekOk(fn).unwrap();
+      expect(fn).toHaveBeenCalledWith(42);
     });
 
-    it('should completely ignore promises from the consumer function', async () => {
-      // This should complete immediately without waiting for the promise
-      let promiseResolved = false;
-
-      const chain = safe(42).watch(() => {
-        return new Promise((resolve) => {
-          setTimeout(() => {
-            promiseResolved = true;
-            resolve(true);
-          }, 50);
-        });
-      });
-
-      // The chain should complete immediately without waiting
-      const result = chain.unwrap();
-      expect(result).toBe(42);
-      expect(promiseResolved).toBe(false);
-
-      // Wait to ensure the promise does resolve eventually
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(promiseResolved).toBe(true);
+    it('skips on error state', () => {
+      const fn = vi.fn();
+      safe(() => {
+        throw new Error('fail');
+      }).peekOk(fn);
+      expect(fn).not.toHaveBeenCalled();
     });
 
-    it('should maintain chain value when watch returns a different value', () => {
+    it('ignores errors thrown in callback', () => {
+      expect(
+        safe(42)
+          .peekOk(() => {
+            throw new Error('fail');
+          })
+          .unwrap()
+      ).toBe(42);
+    });
+
+    it('ignores promise rejections in callback', () => {
       const result = safe(42)
-        .watch(() => 'different value')
+        .peekOk(() => Promise.reject(new Error('fail')))
         .unwrap();
-
       expect(result).toBe(42);
+    });
+
+    it('preserves the chain value', () => {
+      expect(
+        safe(42)
+          .peekOk(() => 999)
+          .unwrap()
+      ).toBe(42);
     });
   });
 
-  describe('effect', () => {
-    it('should call the effect function with the value', () => {
-      const mockFn = vi.fn();
-      const result = safe(42).effect(mockFn).unwrap();
+  // ─── peekError ─────────────────────────────────────────────────
 
-      expect(mockFn).toHaveBeenCalledWith(42);
-      expect(result).toBe(42);
+  describe('peekError', () => {
+    it('observes error', () => {
+      const fn = vi.fn();
+      safe(() => {
+        throw new Error('fail');
+      }).peekError(fn);
+      expect(fn).toHaveBeenCalledWith(expect.objectContaining({ message: 'fail' }));
     });
 
-    it('should propagate errors thrown in the effect function', () => {
-      const chain = safe(42).effect(() => {
-        if (FOURCE) throw new Error('Effect error');
+    it('skips on success state', () => {
+      const fn = vi.fn();
+      safe(42).peekError(fn);
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('ignores errors thrown in callback', () => {
+      expect(() =>
+        safe(() => {
+          throw new Error('original');
+        })
+          .peekError(() => {
+            throw new Error('peek fail');
+          })
+          .unwrap()
+      ).toThrow('original');
+    });
+
+    it('preserves the error state', () => {
+      expect(() =>
+        safe(() => {
+          throw new Error('fail');
+        })
+          .peekError(() => {})
+          .unwrap()
+      ).toThrow('fail');
+    });
+  });
+
+  // ─── match ─────────────────────────────────────────────────────
+
+  describe('match', () => {
+    it('calls ok handler on success', () => {
+      const result = safe(42).match({
+        ok: (v) => `value: ${v}`,
+        err: (e) => `error: ${e.message}`,
       });
-
-      expect(!chain.isOk).toBe(true);
-      expect(() => chain.unwrap()).toThrow('Effect error');
+      expect(result).toBe('value: 42');
     });
 
-    it('should propagate rejected promises from the effect function', async () => {
-      const chain = safe(42).effect(() => Promise.reject(new Error('Effect error')));
-
-      await expect(chain.unwrap()).rejects.toThrow('Effect error');
+    it('calls err handler on error', () => {
+      const result = safe(() => {
+        throw new Error('fail');
+      }).match({
+        ok: (v) => `value: ${v}`,
+        err: (e) => `error: ${e.message}`,
+      });
+      expect(result).toBe('error: fail');
     });
 
-    it('should not call the effect function if the chain has an error', () => {
-      const mockFn = vi.fn();
-      const chain = safe<number>(() => {
-        throw new Error('Chain error');
-      }).effect(mockFn);
-
-      expect(mockFn).not.toHaveBeenCalled();
-      expect(!chain.isOk).toBe(true);
-    });
-
-    it('should handle async effects properly', async () => {
-      // Using a setTimeout promise to ensure we're testing real async behavior
-      let effectExecuted = false;
-
-      const chain = safe(42).effect(() => {
-        return new Promise((resolve) => {
-          setTimeout(() => {
-            effectExecuted = true;
-            resolve('different value');
-          }, 10);
+    it('handles async chain', async () => {
+      const result = await safe(1)
+        .map(async (x) => x + 1)
+        .match({
+          ok: (v) => v * 10,
+          err: () => 0,
         });
-      });
-
-      // Should wait for the promise to resolve
-      const result = await chain.unwrap();
-      expect(result).toBe(42);
-      expect(effectExecuted).toBe(true);
+      expect(result).toBe(20);
     });
 
-    it('should maintain original chain value when effect returns a different value', () => {
-      const result = safe(42)
-        .effect(() => 'different value')
-        .unwrap();
-
-      expect(result).toBe(42);
-    });
-  });
-
-  describe('ifOk', () => {
-    it('should call the ifOk function with the value', () => {
-      const mockFn = vi.fn();
-      const result = safe(42).ifOk(mockFn).unwrap();
-
-      expect(mockFn).toHaveBeenCalledWith(42);
-      expect(result).toBe(42);
-    });
-
-    it('should propagate errors thrown in the ifOk function', () => {
-      const chain = safe(42).ifOk(() => {
-        if (FOURCE) throw new Error('IfOk error');
-      });
-
-      expect(!chain.isOk).toBe(true);
-      expect(() => chain.unwrap()).toThrow('IfOk error');
-    });
-
-    it('should propagate rejected promises from the ifOk function', async () => {
-      const chain = safe(42).ifOk(() => Promise.reject(new Error('IfOk error')));
-
-      await expect(chain.unwrap()).rejects.toThrow('IfOk error');
-    });
-
-    it('should not call the ifOk function if the chain has an error', () => {
-      const mockFn = vi.fn();
-      const chain = safe<number>(() => {
-        throw new Error('Chain error');
-      }).ifOk(mockFn);
-
-      expect(mockFn).not.toHaveBeenCalled();
-      expect(!chain.isOk).toBe(true);
-    });
-
-    it('should handle async ifOk properly', async () => {
-      // Using a setTimeout promise to ensure we're testing real async behavior
-      let ifOkExecuted = false;
-
-      const chain = safe(42).ifOk(() => {
-        return new Promise((resolve) => {
-          setTimeout(() => {
-            ifOkExecuted = true;
-            resolve('different value');
-          }, 10);
+    it('handles async chain with error', async () => {
+      const result = await safe(1)
+        .map(async () => {
+          throw new Error('async fail');
+        })
+        .match({
+          ok: () => 'ok',
+          err: (e) => `error: ${e.message}`,
         });
-      });
-
-      // Should wait for the promise to resolve
-      const result = await chain.unwrap();
-      expect(result).toBe(42);
-      expect(ifOkExecuted).toBe(true);
+      expect(result).toBe('error: async fail');
     });
 
-    it('should maintain original chain value when ifOk returns a different value', () => {
-      const result = safe(42)
-        .ifOk(() => 'different value')
-        .unwrap();
-
-      expect(result).toBe(42);
+    it('works after recover', () => {
+      const result = safe(() => {
+        throw new Error('fail');
+      })
+        .recover(() => 'recovered')
+        .match({
+          ok: (v) => `ok: ${v}`,
+          err: (e) => `err: ${e.message}`,
+        });
+      expect(result).toBe('ok: recovered');
     });
   });
 
-  describe('catch', () => {
-    it('should replace an error with a recovery value', () => {
-      const result = safe<number>(() => {
-        throw new Error('Test error');
-      })
-        .catch(() => 42)
-        .unwrap();
-
-      expect(result).toBe(42);
-    });
-
-    it('should not affect chains with success values', () => {
-      const result = safe(24)
-        .catch(() => 42)
-        .unwrap();
-      expect(result).toBe(24);
-    });
-
-    it('should capture errors thrown in the recovery function', () => {
-      const chain = safe(() => {
-        throw new Error('Original error');
-        return '';
-      }).catch(() => {
-        throw new Error('Recovery error');
-        return '';
-      });
-
-      expect(() => chain.unwrap()).toThrow('Recovery error');
-    });
-
-    it('should handle async recovery values', async () => {
-      const result = await safe<number>(() => {
-        throw new Error('Test error');
-      })
-        .catch(() => Promise.resolve(42))
-        .unwrap();
-
-      expect(result).toBe(42);
-    });
-
-    it('should handle rejected promises in recovery function', async () => {
-      const chain = safe<number>(() => {
-        throw new Error('Original error');
-      }).catch(() => Promise.reject(new Error('Recovery error')));
-
-      await expect(chain.unwrap()).rejects.toThrow('Recovery error');
-    });
-  });
-
-  describe('ifFail', () => {
-    it('should replace an error with a recovery value', () => {
-      const result = safe<number>(() => {
-        throw new Error('Test error');
-      })
-        .ifFail(() => 42)
-        .unwrap();
-
-      expect(result).toBe(42);
-    });
-
-    it('should not affect chains with success values', () => {
-      const result = safe(24)
-        .ifFail(() => 42)
-        .unwrap();
-      expect(result).toBe(24);
-    });
-
-    it('should capture errors thrown in the recovery function', () => {
-      const chain = safe(() => {
-        throw new Error('Original error');
-        return '';
-      }).ifFail(() => {
-        throw new Error('Recovery error');
-        return '';
-      });
-
-      expect(() => chain.unwrap()).toThrow('Recovery error');
-    });
-
-    it('should handle async recovery values', async () => {
-      const result = await safe<number>(() => {
-        throw new Error('Test error');
-      })
-        .ifFail(() => Promise.resolve(42))
-        .unwrap();
-
-      expect(result).toBe(42);
-    });
-
-    it('should handle rejected promises in recovery function', async () => {
-      const chain = safe<number>(() => {
-        throw new Error('Original error');
-      }).ifFail(() => Promise.reject(new Error('Recovery error')));
-
-      await expect(chain.unwrap()).rejects.toThrow('Recovery error');
-    });
-  });
+  // ─── isOk ──────────────────────────────────────────────────────
 
   describe('isOk', () => {
-    it('isOk should return true for success values', () => {
+    it('returns true for success', () => {
       expect(safe(42).isOk).toBe(true);
     });
 
-    it('isOk should return false for errors', () => {
+    it('returns false for error', () => {
       expect(
         safe(() => {
-          throw new Error('Test');
+          throw new Error();
         }).isOk
       ).toBe(false);
     });
 
-    it('isOk should handle async operations', async () => {
-      const asyncChain = safe(Promise.resolve(42));
-      expect(await asyncChain.isOk).toBe(true);
+    it('returns Promise<boolean> for async chain', async () => {
+      expect(await safe(1).map(async (x) => x).isOk).toBe(true);
+    });
 
-      const errorChain = safe(Promise.reject(new Error('Async error')));
-      expect(await errorChain.isOk).toBe(false);
+    it('returns Promise<false> for async error', async () => {
+      expect(
+        await safe(1).map(async () => {
+          throw new Error();
+        }).isOk
+      ).toBe(false);
     });
   });
 
+  // ─── unwrap ────────────────────────────────────────────────────
+
   describe('unwrap', () => {
-    it('should return the success value', () => {
+    it('returns value on success', () => {
       expect(safe(42).unwrap()).toBe(42);
     });
 
-    it('should throw the error', () => {
+    it('throws on error', () => {
       expect(() =>
         safe(() => {
-          throw new Error('Test');
+          throw new Error('fail');
         }).unwrap()
-      ).toThrow('Test');
+      ).toThrow('fail');
     });
 
-    it('should handle promises correctly', async () => {
-      const result = await safe(Promise.resolve(42)).unwrap();
-      expect(result).toBe(42);
+    it('returns Promise for async chain', async () => {
+      expect(
+        await safe(1)
+          .map(async (x) => x + 1)
+          .unwrap()
+      ).toBe(2);
     });
 
-    it('should handle nested promises correctly', async () => {
-      const result = await safe(Promise.resolve(Promise.resolve(42))).unwrap();
-      expect(result).toBe(42);
+    it('rejects Promise for async error', async () => {
+      await expect(
+        safe(1)
+          .map(async () => {
+            throw new Error('fail');
+          })
+          .unwrap()
+      ).rejects.toThrow('fail');
     });
   });
 
-  describe('Promise type inference and nested promises', () => {
-    it('should handle promise chains correctly', async () => {
-      const result = await safe(2)
-        .map((x) => Promise.resolve(x * 2))
-        .map(async (x) => (await x) + 1)
-        .unwrap();
+  // ─── orElse ────────────────────────────────────────────────────
 
-      expect(result).toBe(5);
+  describe('orElse', () => {
+    it('returns value on success', () => {
+      expect(safe(42).orElse('default')).toBe(42);
     });
 
-    it('should handle deeply nested promises', async () => {
-      const result = await safe(2)
-        .map((x) => Promise.resolve(Promise.resolve(x * 2)))
-        .map(async (x) => {
-          const resolved = await x;
-          return resolved + 1;
-        })
-        .unwrap();
-
-      expect(result).toBe(5);
+    it('returns fallback on error', () => {
+      expect(
+        safe(() => {
+          throw new Error();
+        }).orElse('default')
+      ).toBe('default');
     });
 
-    it('should preserve Promise type through the chain', async () => {
-      type User = { id: number; name: string };
-      const fetchUser = (id: number): Promise<User> => Promise.resolve({ id, name: 'Test User' });
+    it('handles async chain', async () => {
+      expect(
+        await safe(1)
+          .map(async (x) => x + 1)
+          .orElse(0)
+      ).toBe(2);
+    });
 
-      const updateUser = (user: User): Promise<User> => Promise.resolve({ ...user, name: 'Updated User' });
+    it('handles async error with fallback', async () => {
+      expect(
+        await safe(1)
+          .map(async () => {
+            throw new Error();
+          })
+          .orElse(0)
+      ).toBe(0);
+    });
+  });
 
+  // ─── Async Chains ──────────────────────────────────────────────
+
+  describe('Async Chains', () => {
+    it('promise value is awaited in map', async () => {
+      const result = await safe(Promise.resolve(42))
+        .map((v) => v * 2)
+        .unwrap();
+      expect(result).toBe(84);
+    });
+
+    it('chain becomes async when tap returns promise', async () => {
+      const result = await safe(42)
+        .tap(async () => {})
+        .unwrap();
+      expect(result).toBe(42);
+    });
+
+    it('chain becomes async when recover returns promise', async () => {
+      const result = await safe(() => {
+        throw new Error('fail');
+      })
+        .recover(async () => 'async default')
+        .unwrap();
+      expect(result).toBe('async default');
+    });
+
+    it('complex async chain', async () => {
+      const log = vi.fn();
       const result = await safe(1)
-        .map(fetchUser) // Promise<User>
-        .map(updateUser) // Promise<User> (no double Promise)
-        .map(async (user) => {
-          const updated = await user;
-          return { ...updated, verified: true };
-        })
+        .map(async (x) => x + 1)
+        .map((x) => x * 10)
+        .tap((x) => log(x))
+        .peekOk((x) => log(`peek: ${x}`))
         .unwrap();
-
-      expect(result).toEqual({ id: 1, name: 'Updated User', verified: true });
+      expect(result).toBe(20);
+      expect(log).toHaveBeenCalledWith(20);
     });
   });
 
-  describe('Error normalization', () => {
-    it('should convert string errors to Error objects', () => {
-      const chain = safe(() => {
-        throw 'String error' as any;
-      });
+  // ─── Error Normalization ───────────────────────────────────────
 
-      expect(() => chain.unwrap()).toThrow();
-      expect(!chain.isOk).toBe(true);
-    });
-
-    it('should convert unknown errors to Error objects', () => {
-      const chain = safe(() => {
-        throw { custom: 'error' } as any;
-      });
-
-      expect(chain.isOk).toBe(false);
-      expect(() => chain.unwrap()).toThrow();
-    });
-  });
-  describe('orElse method', () => {
-    it('should return the value when chain is successful', () => {
-      const result = safe(42).orElse(100);
-
-      expect(result).toBe(42);
-    });
-
-    it('should return fallback value when chain has an error', () => {
+  describe('Error Normalization', () => {
+    it('normalizes string errors', () => {
       const result = safe(() => {
-        throw new Error('Test error');
-      }).orElse(100);
-
-      expect(result).toBe(100);
+        throw 'string error';
+      });
+      expect(() => result.unwrap()).toThrow('string error');
     });
 
-    it('should work with different fallback value types', () => {
-      const result = safe<number>(() => {
-        throw new Error('Test error');
-      }).orElse('fallback' as any);
+    it('normalizes unknown errors', () => {
+      const result = safe(() => {
+        throw { code: 404 };
+      });
+      expect(() => result.unwrap()).toThrow();
+    });
 
+    it('preserves Error instances', () => {
+      const error = new TypeError('type error');
+      const result = safe(() => {
+        throw error;
+      });
+      expect(() => result.unwrap()).toThrow(error);
+    });
+  });
+
+  // ─── Integration ───────────────────────────────────────────────
+
+  describe('Integration', () => {
+    it('full chain: map → tap → peek → unwrap', () => {
+      const log = vi.fn();
+      const peekFn = vi.fn();
+      const result = safe(5)
+        .map((x) => x * 2)
+        .tap((x) => log(x))
+        .peekOk((x) => peekFn(x))
+        .unwrap();
+      expect(result).toBe(10);
+      expect(log).toHaveBeenCalledWith(10);
+      expect(peekFn).toHaveBeenCalledWith(10);
+    });
+
+    it('error chain: map → tap(skipped) → peekError → recover → unwrap', () => {
+      const tapFn = vi.fn();
+      const peekFn = vi.fn();
+      const result = safe(() => {
+        throw new Error('fail');
+      })
+        .map((x) => x)
+        .tap(tapFn)
+        .peekError(peekFn)
+        .recover(() => 'fallback')
+        .unwrap();
+      expect(tapFn).not.toHaveBeenCalled();
+      expect(peekFn).toHaveBeenCalled();
       expect(result).toBe('fallback');
     });
 
-    it('should handle async chains correctly', async () => {
-      const successResult = await safe(Promise.resolve(42)).orElse(100);
-      expect(successResult).toBe(42);
+    it('match replaces unwrap/orElse pattern', () => {
+      const format = (s: ReturnType<typeof safe<number>>) =>
+        s.match({
+          ok: (v) => ({ status: 'success' as const, data: v }),
+          err: (e) => ({ status: 'error' as const, message: e.message }),
+        });
 
-      const errorResult = await safe(Promise.reject(new Error('Async error'))).orElse(100);
-      expect(errorResult).toBe(100);
+      expect(format(safe(42))).toEqual({ status: 'success', data: 42 });
+      expect(
+        format(
+          safe(() => {
+            throw new Error('fail');
+          })
+        )
+      ).toEqual({ status: 'error', message: 'fail' });
+    });
+
+    it('async integration: fetch → transform → recover', async () => {
+      const fetchUser = async (id: number) => ({ id, name: 'Alice' });
+
+      const result = await safe(() => fetchUser(1))
+        .map((user) => user.name)
+        .tap(async () => {
+          await Promise.resolve();
+        })
+        .recover(() => 'Anonymous')
+        .unwrap();
+
+      expect(result).toBe('Alice');
     });
   });
 });

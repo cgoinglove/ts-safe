@@ -22,7 +22,7 @@
   ],
   "author": "cging",
   "license": "MIT",
-  "version": "0.0.5",
+  "version": "1.0.0",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -49,7 +49,11 @@
     "lint": "eslint .",
     "prepare:release": "npm run format && npm run type-check && npm run test run",
     "prepare:version": "npm --no-git-tag-version version patch",
-    "release": "npm run prepare:release && npm run build && npm run prepare:version && npm publish"
+    "prepare:version:minor": "npm --no-git-tag-version version minor",
+    "prepare:version:major": "npm --no-git-tag-version version major",
+    "release": "npm run prepare:release && npm run build && npm run prepare:version && npm publish",
+    "release:minor": "npm run prepare:release && npm run build && npm run prepare:version:minor && npm publish",
+    "release:major": "npm run prepare:release && npm run build && npm run prepare:version:major && npm publish"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",

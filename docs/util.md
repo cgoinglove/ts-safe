@@ -1,138 +1,96 @@
-# Safe Utils
+# Safe Utilities
 
-Utility functions that complement the Safe core functionality, making common validation and observation patterns easier.
+Utility functions that complement the Safe core functionality.
 
-## Validation Utilities
+## Validation
 
-Safe provides common validators that throw errors under specific conditions, making validation easier in your chains.
+Validator functions designed for use with `map`. They return the value if valid, or throw an error if invalid.
 
-```typescript
-import { safe, errorIfNull, errorIfEmpty, errorIfFalsy, errorIf } from 'ts-safe';
+### `errorIfNull(message?)`
 
-// Check for null/undefined values
-safe(userData)
-  .ifOk(errorIfNull('User data is required'))
-  .map(user => user.email)
-  .unwrap();
+Throws if value is `null` or `undefined`.
 
-// Check for empty arrays or strings
-safe(emails)
-  .ifOk(errorIfEmpty('Email list cannot be empty'))
-  .map(list => sendEmails(list))
-  .unwrap();
-
-// Check using a custom condition
-safe(user)
-  .ifOk(errorIf((user) => 
-    !user.agreeToTerms && 'User must agree to terms'
-  ))
-  .unwrap();
+```ts
+safe(value).map(errorIfNull()).unwrap()
+safe(value).map(errorIfNull('User not found')).unwrap()
 ```
 
-## Observer Utilities
+### `errorIfFalsy(message?)`
 
-Helper functions to simplify monitoring successful values or errors in your chains.
+Throws if value is falsy (`null`, `undefined`, `0`, `''`, `false`, `NaN`).
 
-```typescript
-import { safe, watchOk, watchError } from 'ts-safe';
-
-// Process user registration
-safe(formData)
-  .map(validateForm)
-  .map(createUser)
-  .watch(watchOk(user => {
-    // Only runs if chain has a success value
-    analytics.track('User Created', { userId: user.id });
-    showSuccessMessage();
-  }))
-  .watch(watchError(error => {
-    // Only runs if chain has an error
-    analytics.track('Registration Failed', { error: error.message });
-    showErrorMessage(error.message);
-  }))
-  .unwrap();
+```ts
+safe(input).map(errorIfFalsy('Input required')).unwrap()
 ```
 
-## Retry Utility
+### `errorIfEmpty(message?)`
 
-A powerful utility that automatically retries failed operations.
+Throws if value has `length === 0`. Works with arrays and strings.
 
-```typescript
-import { safe,retry } from 'ts-safe';
-
-// Basic usage
-safe(userId)
-  .map(retry(fetchUserData))
-  // Retries up to 3 times with 1 second between attempts
-
-// With custom options
-safe(transactionData)
-  .map(retry(processPayment, { 
-    maxTries: 5,         // Try up to 5 times
-    delay: 2000,         // Wait 2 seconds between tries
-    backoff: true        // Use exponential backoff (2s, 4s, 8s, 16s...)
-  }))
-  .unwrap();
-
-// With effect
-safe(userData)
-  .ifOk(retry(saveToDatabase, { maxTries: 3 }))
-  .unwrap();
+```ts
+safe(items).map(errorIfEmpty('List must not be empty')).unwrap()
 ```
 
-## Complete Example
+### `errorIf(predicate)`
 
-```typescript
-import { safe, errorIfNull, errorIfEmpty, watchOk, watchError, retry  } from 'ts-safe';
+Throws if predicate returns a string (used as error message). Returns `false` or `undefined` for valid values.
 
-function processPayment(paymentData) {
-  return safe(paymentData)
-    // Validate required data
-    .ifOk(errorIfNull('Payment data is required'))
-    .map(data => data.amount)
-    .ifOk(errorIf(amount => amount <= 0 && 'Amount must be greater than zero'))
-    .map(amount => ({
-      amount,
-      fee: calculateFee(amount),
-      total: amount + calculateFee(amount)
-    }))
-    // Process the payment with retry on failure
-    .map(retry(processTransaction, { maxTries: 3, backoff: true }))
-    // Track outcomes without affecting the chain
-    .watch(watchOk(result => {
-      logSuccess('Payment processed', result.transactionId);
-      showSuccessUI(result);
-    }))
-    .watch(watchError(error => {
-      logError('Payment failed', error);
-      showErrorUI(error.message);
-    }))
+```ts
+const validateAge = errorIf((age: number) => {
+  if (age < 0) return 'Age cannot be negative';
+  if (age > 150) return 'Invalid age';
+  return false;
+});
+
+safe(25).map(validateAge).unwrap() // 25
+safe(-1).map(validateAge).unwrap() // throws Error('Age cannot be negative')
+```
+
+## Retry
+
+### `retry(fn, options?)`
+
+Wraps a function with automatic retry logic.
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `maxTries` | `3` | Maximum number of attempts |
+| `delay` | `1000` | Delay between retries (ms) |
+| `backoff` | `false` | Use exponential backoff |
+
+```ts
+// Basic retry
+const result = await safe(url)
+  .map(retry(fetchData, { maxTries: 3, delay: 500 }))
+  .unwrap();
+
+// With exponential backoff (500ms, 1000ms, 2000ms)
+const result = await safe(url)
+  .map(retry(fetchData, { maxTries: 3, delay: 500, backoff: true }))
+  .unwrap();
+
+// With tap (preserves original value)
+await safe(data)
+  .tap(retry(saveToDB, { maxTries: 2, delay: 1000 }))
+  .unwrap(); // returns original data, not saveToDB result
+```
+
+## Example: API Request Pipeline
+
+```ts
+import { safe, errorIfNull, retry } from 'ts-safe';
+
+const fetchUser = async (id: number) => {
+  const result = await safe(() => fetch(`/api/users/${id}`))
+    .map(retry(res => res.json(), { maxTries: 2, delay: 500 }))
+    .map(errorIfNull('User not found'))
+    .peekOk(user => console.log('Fetched:', user.name))
+    .peekError(err => console.error(err))
+    .recover(() => ({ id: 0, name: 'Guest' }))
     .unwrap();
-}
+
+  return result;
+};
 ```
-
-## Available Utilities
-
-### Validation
-
-| Function | Description |
-|----------|-------------|
-| `errorIfNull(message?)` | Throws error if value is null or undefined |
-| `errorIfEmpty(message?)` | Throws error if array or string is empty |
-| `errorIfFalsy(message?)` | Throws error if value is falsy (empty, 0, null, undefined, etc) |
-| `errorIf(predicate)` | Throws error based on a custom condition |
-
-### Observation
-
-| Function | Description |
-|----------|-------------|
-| `watchOk(consumer)` | Runs the consumer function only if the chain contains a success value |
-| `watchError(consumer)` | Runs the consumer function only if the chain contains an error |
-
-### Operation Utilities
-
-| Function | Description |
-|----------|-------------|
-| `retry(fn, options?)` | Creates a function that automatically retries on failure |
-
-These utilities help reduce boilerplate code and make your chains more readable and maintainable.

@@ -18,12 +18,12 @@ export type SafeResult<T = any> =
     };
 
 const normalizeError = (error: ErrorLike): Error => {
+  if (error instanceof Error) return error;
+  if (typeof error === 'string') return new Error(error);
   try {
-    if (error instanceof Error) return error;
-    if (typeof error == 'string') return new Error(error);
     return new Error(JSON.stringify(error));
-  } catch (error) {
-    return error as Error;
+  } catch {
+    return new Error('Unknown error');
   }
 };
 

@@ -1,97 +1,81 @@
 # Safe Pipe
 
-Function composition made simple with automatic error handling and Promise support.
+Function composition with automatic error handling and Promise support.
 
 ## What is SafePipe?
 
-`safePipe` creates reusable function pipelines where:
-- Each function receives the output of the previous function
-- Promises are handled automatically
-- Errors are caught and wrapped in Safe
-- Type safety is preserved throughout the pipeline
+`safe.pipe` creates a pipeline of functions where each function's output becomes the next function's input. If any function throws, the chain enters an error state and subsequent functions are skipped.
 
-## Usage
+## Basic Usage
 
-```typescript
-import { safePipe } from 'ts-safe';
+```ts
+import { safe } from 'ts-safe';
 
-// Basic pipeline with synchronous functions
-const numberProcessor = safePipe(
-  (num: number) => num * 2,           // 5 -> 10
-  (num: number) => num + 5,           // 10 -> 15
-  (num: number) => `The result is ${num}` // 15 -> "The result is 15"
-);
+const addOne = (x: number) => x + 1;
+const double = (x: number) => x * 2;
+const toString = (x: number) => `Result: ${x}`;
 
-console.log(numberProcessor(5).unwrap()); // "The result is 15"
+const process = safe.pipe(addOne, double, toString);
 
-// Pipeline with async functions
-const fetchData = safePipe(
-  (id: string) => `https://api.example.com/users/${id}`,
-  (url: string) => fetch(url).then(r => r.json()),
-  (user: any) => user.name
-);
-
-// Automatically handles promises
-const userName = await fetchData("123").unwrap(); // Returns the user's name
-
-// Error handling
-const validateAndProcess = safePipe(
-  (input: any) => {
-    if (!input) throw new Error("Input required");
-    return input;
-  },
-  (data: any) => processData(data)
-);
-
-// Errors are safely caught
-const result = validateAndProcess(null);
-console.log(result.isOk); // false
-// result.unwrap() would throw "Input required" error
+process(5).unwrap(); // 'Result: 12'
 ```
 
-## Why SafePipe?
+## Error Handling
 
-Unlike regular function composition:
-- **Automatic Promise handling**: No need to manually handle async/await
-- **Built-in error handling**: All errors are safely caught and propagated
-- **Safe integration**: Results are wrapped in Safe for further processing
-- **Type Safety**: Full TypeScript support with proper type inference
+Errors are captured automatically. Use `recover` to handle them:
 
-## Real-World Example
-
-```typescript
-// API data processing pipeline
-const processApiData = safePipe(
-  // 1. Fetch data from API
-  (params: QueryParams) => fetchFromApi(params),
-  
-  // 2. Transform the response
-  (apiResponse: ApiResponse) => transformData(apiResponse),
-  
-  // 3. Validate the transformed data
-  (data: TransformedData) => {
-    if (!data.isValid) throw new Error("Invalid data structure");
-    return data;
-  },
-  
-  // 4. Format for the UI
-  (validData: TransformedData) => ({
-    items: validData.results,
-    total: validData.count,
-    hasMore: validData.page < validData.totalPages
-  })
+```ts
+const riskyPipe = safe.pipe(
+  (x: number) => x + 1,
+  (x: number) => { throw new Error('fail'); },
+  (x: number) => x * 2  // never reached
 );
 
-// Usage in a component
-function loadData() {
-  return processApiData({ page: 1, limit: 10 })
-    .catch(error => {
-      // Fallback if anything fails
-      console.error("Data processing failed:", error);
-      return { items: [], total: 0, hasMore: false };
-    })
-    .unwrap();
-}
+riskyPipe(5).isOk;                       // false
+riskyPipe(5).recover(() => 0).unwrap();  // 0
 ```
 
-With `safePipe`, your data processing flows become cleaner, more modular, and safer.
+## Async Pipelines
+
+If any function returns a Promise, the pipeline becomes async:
+
+```ts
+const fetchAndFormat = safe.pipe(
+  (url: string) => fetch(url),
+  async (res) => await res.json(),
+  (data) => data.name
+);
+
+const result = await fetchAndFormat('/api/user').unwrap();
+```
+
+## Composing with Safe
+
+The result of a pipe is a `Safe`, so you can chain further operations:
+
+```ts
+const getUser = safe.pipe(
+  (id: number) => fetchUser(id),
+  (user) => user.name
+);
+
+const result = getUser(1)
+  .map(name => name.toUpperCase())
+  .tap(name => console.log(name))
+  .recover(() => 'Anonymous')
+  .unwrap();
+```
+
+## Type Safety
+
+Pipes support up to 7 functions with full type inference:
+
+```ts
+// Types flow through automatically
+const pipe = safe.pipe(
+  (id: number) => getUser(id),       // number → User
+  (user) => user.permissions,         // User → string[]
+  (perms) => perms.includes('admin')  // string[] → boolean
+);
+// pipe: (input: number) => Safe<boolean>
+```
