@@ -71,9 +71,9 @@ const result = await safe(url)
   .map(retry(fetchData, { maxTries: 3, delay: 500, backoff: true }))
   .unwrap();
 
-// With tap (preserves original value)
+// With effect (preserves original value)
 await safe(data)
-  .tap(retry(saveToDB, { maxTries: 2, delay: 1000 }))
+  .effect(retry(saveToDB, { maxTries: 2, delay: 1000 }))
   .unwrap(); // returns original data, not saveToDB result
 ```
 
@@ -86,8 +86,8 @@ const fetchUser = async (id: number) => {
   const result = await safe(() => fetch(`/api/users/${id}`))
     .map(retry(res => res.json(), { maxTries: 2, delay: 500 }))
     .map(errorIfNull('User not found'))
-    .peekOk(user => console.log('Fetched:', user.name))
-    .peekError(err => console.error(err))
+    .observeOk(user => console.log('Fetched:', user.name))
+    .observeError(err => console.error(err))
     .recover(() => ({ id: 0, name: 'Guest' }))
     .unwrap();
 

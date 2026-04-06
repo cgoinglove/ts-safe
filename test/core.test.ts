@@ -141,19 +141,19 @@ describe('Safe', () => {
     });
   });
 
-  // ─── tap ───────────────────────────────────────────────────────
+  // ─── effect ────────────────────────────────────────────────────
 
-  describe('tap', () => {
+  describe('effect', () => {
     it('executes side effect with the value', () => {
       const fn = vi.fn();
-      safe(42).tap(fn).unwrap();
+      safe(42).effect(fn).unwrap();
       expect(fn).toHaveBeenCalledWith(42);
     });
 
     it('preserves the original value (return value ignored)', () => {
       expect(
         safe(42)
-          .tap(() => 999)
+          .effect(() => 999)
           .unwrap()
       ).toBe(42);
     });
@@ -162,23 +162,23 @@ describe('Safe', () => {
       const fn = vi.fn();
       safe(() => {
         throw new Error('fail');
-      }).tap(fn);
+      }).effect(fn);
       expect(fn).not.toHaveBeenCalled();
     });
 
     it('propagates thrown error to the chain', () => {
       expect(() =>
         safe(42)
-          .tap(() => {
-            throw new Error('tap fail');
+          .effect(() => {
+            throw new Error('effect fail');
           })
           .unwrap()
-      ).toThrow('tap fail');
+      ).toThrow('effect fail');
     });
 
     it('handles async side effect', async () => {
       const fn = vi.fn(async () => {});
-      const value = await safe(42).tap(fn).unwrap();
+      const value = await safe(42).effect(fn).unwrap();
       expect(fn).toHaveBeenCalledWith(42);
       expect(value).toBe(42);
     });
@@ -186,14 +186,14 @@ describe('Safe', () => {
     it('propagates rejected promise', async () => {
       await expect(
         safe(42)
-          .tap(() => Promise.reject(new Error('async tap fail')))
+          .effect(() => Promise.reject(new Error('async effect fail')))
           .unwrap()
-      ).rejects.toThrow('async tap fail');
+      ).rejects.toThrow('async effect fail');
     });
 
     it('preserves value even with async side effect', async () => {
       const value = await safe(42)
-        .tap(async () => 'ignored')
+        .effect(async () => 'ignored')
         .unwrap();
       expect(value).toBe(42);
     });
@@ -259,12 +259,12 @@ describe('Safe', () => {
     });
   });
 
-  // ─── peek ──────────────────────────────────────────────────────
+  // ─── observe ───────────────────────────────────────────────────
 
-  describe('peek', () => {
+  describe('observe', () => {
     it('observes success state', () => {
       const fn = vi.fn();
-      safe(42).peek(fn).unwrap();
+      safe(42).observe(fn).unwrap();
       expect(fn).toHaveBeenCalledWith(expect.objectContaining({ isOk: true, value: 42 }));
     });
 
@@ -272,7 +272,7 @@ describe('Safe', () => {
       const fn = vi.fn();
       safe(() => {
         throw new Error('fail');
-      }).peek(fn);
+      }).observe(fn);
       expect(fn).toHaveBeenCalledWith(expect.objectContaining({ isOk: false }));
       expect(fn.mock.calls[0][0].error).toBeInstanceOf(Error);
     });
@@ -280,8 +280,8 @@ describe('Safe', () => {
     it('ignores errors thrown in callback', () => {
       expect(
         safe(42)
-          .peek(() => {
-            throw new Error('peek fail');
+          .observe(() => {
+            throw new Error('observe fail');
           })
           .unwrap()
       ).toBe(42);
@@ -289,14 +289,14 @@ describe('Safe', () => {
 
     it('ignores promise rejections in callback', () => {
       const result = safe(42)
-        .peek(() => Promise.reject(new Error('async peek fail')))
+        .observe(() => Promise.reject(new Error('async observe fail')))
         .unwrap();
       expect(result).toBe(42);
     });
 
     it('does not convert chain to async even with promise return', () => {
       const result = safe(42)
-        .peek(() => Promise.resolve('ignored'))
+        .observe(() => Promise.resolve('ignored'))
         .unwrap();
       expect(result).toBe(42);
     });
@@ -306,18 +306,18 @@ describe('Safe', () => {
         safe(() => {
           throw new Error('fail');
         })
-          .peek(() => {})
+          .observe(() => {})
           .unwrap()
       ).toThrow('fail');
     });
   });
 
-  // ─── peekOk ────────────────────────────────────────────────────
+  // ─── observeOk ────────────────────────────────────────────────
 
-  describe('peekOk', () => {
+  describe('observeOk', () => {
     it('observes success value', () => {
       const fn = vi.fn();
-      safe(42).peekOk(fn).unwrap();
+      safe(42).observeOk(fn).unwrap();
       expect(fn).toHaveBeenCalledWith(42);
     });
 
@@ -325,14 +325,14 @@ describe('Safe', () => {
       const fn = vi.fn();
       safe(() => {
         throw new Error('fail');
-      }).peekOk(fn);
+      }).observeOk(fn);
       expect(fn).not.toHaveBeenCalled();
     });
 
     it('ignores errors thrown in callback', () => {
       expect(
         safe(42)
-          .peekOk(() => {
+          .observeOk(() => {
             throw new Error('fail');
           })
           .unwrap()
@@ -341,7 +341,7 @@ describe('Safe', () => {
 
     it('ignores promise rejections in callback', () => {
       const result = safe(42)
-        .peekOk(() => Promise.reject(new Error('fail')))
+        .observeOk(() => Promise.reject(new Error('fail')))
         .unwrap();
       expect(result).toBe(42);
     });
@@ -349,26 +349,26 @@ describe('Safe', () => {
     it('preserves the chain value', () => {
       expect(
         safe(42)
-          .peekOk(() => 999)
+          .observeOk(() => 999)
           .unwrap()
       ).toBe(42);
     });
   });
 
-  // ─── peekError ─────────────────────────────────────────────────
+  // ─── observeError ─────────────────────────────────────────────
 
-  describe('peekError', () => {
+  describe('observeError', () => {
     it('observes error', () => {
       const fn = vi.fn();
       safe(() => {
         throw new Error('fail');
-      }).peekError(fn);
+      }).observeError(fn);
       expect(fn).toHaveBeenCalledWith(expect.objectContaining({ message: 'fail' }));
     });
 
     it('skips on success state', () => {
       const fn = vi.fn();
-      safe(42).peekError(fn);
+      safe(42).observeError(fn);
       expect(fn).not.toHaveBeenCalled();
     });
 
@@ -377,8 +377,8 @@ describe('Safe', () => {
         safe(() => {
           throw new Error('original');
         })
-          .peekError(() => {
-            throw new Error('peek fail');
+          .observeError(() => {
+            throw new Error('observe fail');
           })
           .unwrap()
       ).toThrow('original');
@@ -389,7 +389,7 @@ describe('Safe', () => {
         safe(() => {
           throw new Error('fail');
         })
-          .peekError(() => {})
+          .observeError(() => {})
           .unwrap()
       ).toThrow('fail');
     });
@@ -557,9 +557,9 @@ describe('Safe', () => {
       expect(result).toBe(84);
     });
 
-    it('chain becomes async when tap returns promise', async () => {
+    it('chain becomes async when effect returns promise', async () => {
       const result = await safe(42)
-        .tap(async () => {})
+        .effect(async () => {})
         .unwrap();
       expect(result).toBe(42);
     });
@@ -578,8 +578,8 @@ describe('Safe', () => {
       const result = await safe(1)
         .map(async (x) => x + 1)
         .map((x) => x * 10)
-        .tap((x) => log(x))
-        .peekOk((x) => log(`peek: ${x}`))
+        .effect((x) => log(x))
+        .observeOk((x) => log(`observe: ${x}`))
         .unwrap();
       expect(result).toBe(20);
       expect(log).toHaveBeenCalledWith(20);
@@ -615,32 +615,32 @@ describe('Safe', () => {
   // ─── Integration ───────────────────────────────────────────────
 
   describe('Integration', () => {
-    it('full chain: map → tap → peek → unwrap', () => {
+    it('full chain: map → effect → observe → unwrap', () => {
       const log = vi.fn();
-      const peekFn = vi.fn();
+      const observeFn = vi.fn();
       const result = safe(5)
         .map((x) => x * 2)
-        .tap((x) => log(x))
-        .peekOk((x) => peekFn(x))
+        .effect((x) => log(x))
+        .observeOk((x) => observeFn(x))
         .unwrap();
       expect(result).toBe(10);
       expect(log).toHaveBeenCalledWith(10);
-      expect(peekFn).toHaveBeenCalledWith(10);
+      expect(observeFn).toHaveBeenCalledWith(10);
     });
 
-    it('error chain: map → tap(skipped) → peekError → recover → unwrap', () => {
-      const tapFn = vi.fn();
-      const peekFn = vi.fn();
+    it('error chain: map → effect(skipped) → observeError → recover → unwrap', () => {
+      const effectFn = vi.fn();
+      const observeFn = vi.fn();
       const result = safe(() => {
         throw new Error('fail');
       })
         .map((x) => x)
-        .tap(tapFn)
-        .peekError(peekFn)
+        .effect(effectFn)
+        .observeError(observeFn)
         .recover(() => 'fallback')
         .unwrap();
-      expect(tapFn).not.toHaveBeenCalled();
-      expect(peekFn).toHaveBeenCalled();
+      expect(effectFn).not.toHaveBeenCalled();
+      expect(observeFn).toHaveBeenCalled();
       expect(result).toBe('fallback');
     });
 
@@ -666,7 +666,7 @@ describe('Safe', () => {
 
       const result = await safe(() => fetchUser(1))
         .map((user) => user.name)
-        .tap(async () => {
+        .effect(async () => {
           await Promise.resolve();
         })
         .recover(() => 'Anonymous')

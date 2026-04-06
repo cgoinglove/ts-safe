@@ -12,13 +12,13 @@ import { isPromiseLike } from './shared';
  * - `flatMap` — transforms with a function returning another Safe
  *
  * **Side Effect** — runs logic, can affect chain state:
- * - `tap` — side effect on success (errors propagate, value preserved)
+ * - `effect` — side effect on success (errors propagate, value preserved)
  * - `recover` — provides a recovery value on error
  *
  * **Observe** — pure observation, never affects the chain:
- * - `peek` — observes the full SafeResult
- * - `peekOk` — observes the success value only
- * - `peekError` — observes the error only
+ * - `observe` — observes the full SafeResult
+ * - `observeOk` — observes the success value only
+ * - `observeError` — observes the error only
  *
  * **Terminal** — extracts the final result:
  * - `unwrap` — extracts value or throws
@@ -63,7 +63,7 @@ export interface Safe<T> {
    * - If the function returns a **Promise**, the chain becomes asynchronous
    * - The original value is **preserved** (return value is ignored)
    *
-   * Use `tap` for operations like saving to DB, logging to external services,
+   * Use `effect` for operations like saving to DB, logging to external services,
    * or any side effect where failures should stop the chain.
    *
    * @param fn - Side effect function to execute on success
@@ -71,11 +71,11 @@ export interface Safe<T> {
    *
    * @example
    * safe(user)
-   *   .tap(u => saveToDb(u))     // if saveToDb throws, chain enters error state
-   *   .map(u => u.name)          // skipped if tap threw
+   *   .effect(u => saveToDb(u))     // if saveToDb throws, chain enters error state
+   *   .map(u => u.name)             // skipped if effect threw
    *   .unwrap()
    */
-  tap<U>(
+  effect<U>(
     fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
   ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T>;
 
@@ -113,10 +113,10 @@ export interface Safe<T> {
    *
    * @example
    * safe(42)
-   *   .peek(result => console.log(result))  // { isOk: true, value: 42 }
-   *   .unwrap()                              // 42
+   *   .observe(result => console.log(result))  // { isOk: true, value: 42 }
+   *   .unwrap()                                 // 42
    */
-  peek(fn: (result: [T] extends [PromiseLike<any>] ? SafeResult<Awaited<T>> : SafeResult<T>) => any): Safe<T>;
+  observe(fn: (result: [T] extends [PromiseLike<any>] ? SafeResult<Awaited<T>> : SafeResult<T>) => any): Safe<T>;
 
   /**
    * Observes the success value without affecting the chain. **No chain impact.**
@@ -131,10 +131,10 @@ export interface Safe<T> {
    *
    * @example
    * safe(42)
-   *   .peekOk(value => console.log('Got:', value))  // logs 'Got: 42'
-   *   .unwrap()                                      // 42
+   *   .observeOk(value => console.log('Got:', value))  // logs 'Got: 42'
+   *   .unwrap()                                         // 42
    */
-  peekOk(fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => any): Safe<T>;
+  observeOk(fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => any): Safe<T>;
 
   /**
    * Observes the error without affecting the chain. **No chain impact.**
@@ -149,10 +149,10 @@ export interface Safe<T> {
    *
    * @example
    * safe(() => { throw new Error('fail') })
-   *   .peekError(err => console.error(err))  // logs the error
+   *   .observeError(err => console.error(err))  // logs the error
    *   .recover(() => 'fallback')
    */
-  peekError(fn: (error: Error) => any): Safe<T>;
+  observeError(fn: (error: Error) => any): Safe<T>;
 
   /**
    * Extracts the final value by pattern matching on success/error state.
@@ -229,7 +229,7 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
       });
     },
 
-    tap<U>(
+    effect<U>(
       fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
     ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T> {
       return next((prev) => {
@@ -253,27 +253,27 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
       >;
     },
 
-    peek(fn: (result: [T] extends [PromiseLike<any>] ? SafeResult<Awaited<T>> : SafeResult<T>) => any): Safe<T> {
+    observe(fn: (result: [T] extends [PromiseLike<any>] ? SafeResult<Awaited<T>> : SafeResult<T>) => any): Safe<T> {
       return next((prev) => {
         try {
           const r = fn({ ...prev } as [T] extends [PromiseLike<any>] ? SafeResult<Awaited<T>> : SafeResult<T>);
           if (isPromiseLike(r)) r.then(null, () => {});
         } catch {
-          // Errors are intentionally ignored in peek
+          // Errors are intentionally ignored in observe
         }
         if (prev.isOk) return prev.value;
         throw prev.error;
       }) as Safe<T>;
     },
 
-    peekOk(fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => any): Safe<T> {
+    observeOk(fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => any): Safe<T> {
       return next((prev) => {
         if (prev.isOk) {
           try {
             const r = fn(prev.value as [T] extends [PromiseLike<any>] ? Awaited<T> : T);
             if (isPromiseLike(r)) r.then(null, () => {});
           } catch {
-            // Errors are intentionally ignored in peekOk
+            // Errors are intentionally ignored in observeOk
           }
         }
         if (prev.isOk) return prev.value;
@@ -281,14 +281,14 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
       }) as Safe<T>;
     },
 
-    peekError(fn: (error: Error) => any): Safe<T> {
+    observeError(fn: (error: Error) => any): Safe<T> {
       return next((prev) => {
         if (!prev.isOk) {
           try {
             const r = fn(prev.error);
             if (isPromiseLike(r)) r.then(null, () => {});
           } catch {
-            // Errors are intentionally ignored in peekError
+            // Errors are intentionally ignored in observeError
           }
         }
         if (prev.isOk) return prev.value;
@@ -372,8 +372,8 @@ export function safeEmpty(): Safe<undefined> {
 }
 
 /**
- * Type for peek callback function.
+ * Type for observe callback function.
  */
-type PeekFunction<T = unknown> = Parameters<Safe<T>['peek']>[0];
+type ObserveFunction<T = unknown> = Parameters<Safe<T>['observe']>[0];
 
-export type { SafeResult, PeekFunction };
+export type { SafeResult, ObserveFunction };

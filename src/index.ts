@@ -1,4 +1,4 @@
-import { safeEmpty, safeExec, safeValue, type PeekFunction, type Safe } from './core';
+import { safeEmpty, safeExec, safeValue, type ObserveFunction, type Safe } from './core';
 import { safePipe } from './pipe';
 import { isFunction } from './shared';
 export type { SafeResult } from './result';
@@ -31,4 +31,4 @@ function safe<T>(init?: T | (() => T)): Safe<T> {
 
 safe.pipe = safePipe;
 
-export { safePipe, safe, Safe, PeekFunction };
+export { safePipe, safe, Safe, ObserveFunction };

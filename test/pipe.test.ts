@@ -108,7 +108,7 @@ describe('safePipe', () => {
 
     const result = piped(5)
       .map((result) => `The number is ${result}`)
-      .peekOk((str) => {
+      .observeOk((str) => {
         // Side effect
         expect(str).toContain('12');
       });

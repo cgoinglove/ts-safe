@@ -61,7 +61,7 @@ const getUser = safe.pipe(
 
 const result = getUser(1)
   .map(name => name.toUpperCase())
-  .tap(name => console.log(name))
+  .effect(name => console.log(name))
   .recover(() => 'Anonymous')
   .unwrap();
 ```

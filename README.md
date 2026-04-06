@@ -9,8 +9,8 @@ Type-safe error handling for TypeScript — with automatic Promise inference.
 ```ts
 const name = await safe(() => fetch('/api/user'))
   .map(res => res.json())           // transform — value changes
-  .tap(user => saveToDb(user))      // side effect — can break chain, value preserved
-  .peekOk(user => console.log(user))// observe — can't break chain, just watch
+  .effect(user => saveToDb(user))      // side effect — can break chain, value preserved
+  .observeOk(user => console.log(user))// observe — can't break chain, just watch
   .recover(() => defaultUser)       // recover — replace error with fallback
   .map(user => user.name)           // transform — type flows automatically
   .unwrap();                        // extract — Promise<string>
@@ -41,8 +41,8 @@ No `TaskEither`, no `ResultAsync`, no separate API. The type system tracks it fo
 Every method name tells you two things: **what it does** and **whether it affects the chain**.
 
 ```
-Chain affected:     map · flatMap · tap · recover
-Chain unaffected:   peek · peekOk · peekError
+Chain affected:     map · flatMap · effect · recover
+Chain unaffected:   observe · observeOk · observeError
 Extract result:     unwrap · orElse · match · isOk
 ```
 
@@ -77,8 +77,8 @@ safe(() => JSON.parse(input))   // Safe<any>
 // Chain operations
 safe(() => riskyOperation())
   .map(value => transform(value))       // transform the value
-  .tap(value => sideEffect(value))      // side effect — errors break the chain
-  .peekOk(value => console.log(value))  // observe — errors are ignored
+  .effect(value => sideEffect(value))      // side effect — errors break the chain
+  .observeOk(value => console.log(value))  // observe — errors are ignored
   .recover(err => fallbackValue)        // recover from error
   .unwrap()                             // extract the result
 ```
@@ -93,12 +93,12 @@ Methods are organized by **impact on the chain**:
 │  Transform        map(fn)       value → new value            │
 │  (changes value)  flatMap(fn)   value → Safe → flatten       │
 │                                                              │
-│  Side Effect      tap(fn)       run on success, keep value   │
+│  Side Effect      effect(fn)    run on success, keep value   │
 │  (can break)      recover(fn)   run on error, provide value  │
 │                                                              │
-│  Observe          peek(fn)      see SafeResult, can't break  │
-│  (can't break)    peekOk(fn)    see value only, can't break  │
-│                   peekError(fn) see error only, can't break  │
+│  Observe          observe(fn)      see SafeResult, can't break  │
+│  (can't break)    observeOk(fn)    see value only, can't break  │
+│                   observeError(fn) see error only, can't break  │
 │                                                              │
 │  Extract          unwrap()      get value or throw           │
 │                   orElse(v)     get value or default          │
@@ -125,14 +125,14 @@ const parse = (s: string) => safe(() => JSON.parse(s));
 safe('{"a":1}').flatMap(parse).unwrap() // { a: 1 }
 ```
 
-### `tap(fn)` — Side Effect on Success
+### `effect(fn)` — Side Effect on Success
 
 Runs a function on success. The **original value is preserved** (return value ignored). If the function **throws, the error propagates**. If it returns a Promise, the chain becomes async.
 
 ```ts
 safe(user)
-  .tap(u => saveToDb(u))     // if throws → error state
-  .tap(u => sendEmail(u))    // skipped if above threw
+  .effect(u => saveToDb(u))     // if throws → error state
+  .effect(u => sendEmail(u))    // skipped if above threw
   .map(u => u.name)
   .unwrap()
 ```
@@ -148,7 +148,7 @@ safe(() => { throw new Error('fail') })
   .unwrap()                     // 'DEFAULT'
 ```
 
-### `peek(fn)` / `peekOk(fn)` / `peekError(fn)` — Observe
+### `observe(fn)` / `observeOk(fn)` / `observeError(fn)` — Observe
 
 Pure observation. **Nothing you do inside can affect the chain** — thrown errors are silently ignored, Promises are silently ignored, return values are ignored. The chain passes through completely unchanged.
 
@@ -156,20 +156,20 @@ Use for logging, metrics, debugging — anything where failure shouldn't stop th
 
 ```ts
 safe(result)
-  .peekOk(v => console.log('success:', v))    // only on success
-  .peekError(e => console.error('error:', e))  // only on error
-  .peek(r => metrics.record(r.isOk))           // always runs
+  .observeOk(v => console.log('success:', v))    // only on success
+  .observeError(e => console.error('error:', e))  // only on error
+  .observe(r => metrics.record(r.isOk))           // always runs
   .unwrap()
 ```
 
-The difference from `tap`: if your logging service throws, `tap` would break the chain. `peek` swallows the error and continues.
+The difference from `effect`: if your logging service throws, `effect` would break the chain. `observe` swallows the error and continues.
 
 ```ts
-// tap — error propagates (for important side effects)
-safe(data).tap(d => saveToDb(d))      // DB failure → chain breaks ✓
+// effect — error propagates (for important side effects)
+safe(data).effect(d => saveToDb(d))      // DB failure → chain breaks ✓
 
-// peekOk — error ignored (for optional side effects)
-safe(data).peekOk(d => analytics(d))  // analytics failure → chain continues ✓
+// observeOk — error ignored (for optional side effects)
+safe(data).observeOk(d => analytics(d))  // analytics failure → chain continues ✓
 ```
 
 ### `match({ ok, err })` — Pattern Match
@@ -215,8 +215,8 @@ This is the core differentiator. ts-safe tracks sync/async state **at the type l
 | `.map(x => x + 1)` | `Safe<number>` | Sync callback → stays sync |
 | `.map(async x => fetch(x))` | `Safe<Promise<Response>>` | Async callback → becomes async |
 | `.map(res => res.json())` | `Safe<Promise<any>>` | Callback receives awaited value |
-| `.tap(async x => log(x))` | `Safe<Promise<T>>` | Async side effect → becomes async |
-| `.peek(async x => log(x))` | `Safe<T>` | peek **never** goes async |
+| `.effect(async x => log(x))` | `Safe<Promise<T>>` | Async side effect → becomes async |
+| `.observe(async x => log(x))` | `Safe<T>` | observe **never** goes async |
 
 ### The key rule
 

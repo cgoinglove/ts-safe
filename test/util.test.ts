@@ -24,11 +24,11 @@ describe('util', () => {
         expect(fn).toHaveBeenCalledTimes(3);
       });
 
-      it('should preserve original value with tap', async () => {
+      it('should preserve original value with effect', async () => {
         const fn = createFailingFn(1);
 
         const result = await safe('test')
-          .tap(retry(fn, { maxTries: 3, delay: 10 }))
+          .effect(retry(fn, { maxTries: 3, delay: 10 }))
           .unwrap();
 
         expect(result).toBe('test');
