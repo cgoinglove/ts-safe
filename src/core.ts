@@ -80,6 +80,19 @@ export interface Safe<T> {
   ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T>;
 
   /**
+   * Alias for {@link effect}. Runs a side effect on success.
+   *
+   * @example
+   * safe(user)
+   *   .ifOk(u => saveToDb(u))
+   *   .map(u => u.name)
+   *   .unwrap()
+   */
+  ifOk<U>(
+    fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
+  ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T>;
+
+  /**
    * Recovers from an error by providing a replacement value. **Affects the chain.**
    *
    * - Only runs when `isOk` is `false` (skipped on success)
@@ -210,6 +223,15 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
         : Safe<U>;
   };
 
+  const effectFn = <U>(fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U): any => {
+    return next((prev) => {
+      if (!prev.isOk) throw prev.error;
+      const v = fn(prev.value as [T] extends [PromiseLike<any>] ? Awaited<T> : T);
+      if (isPromiseLike(v)) return v.then(() => prev.value);
+      return prev.value;
+    });
+  };
+
   return {
     map<U>(
       transform: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
@@ -229,16 +251,8 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
       });
     },
 
-    effect<U>(
-      fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
-    ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T> {
-      return next((prev) => {
-        if (!prev.isOk) throw prev.error;
-        const v = fn(prev.value as [T] extends [PromiseLike<any>] ? Awaited<T> : T);
-        if (isPromiseLike(v)) return v.then(() => prev.value);
-        return prev.value;
-      }) as [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T>;
-    },
+    effect: effectFn,
+    ifOk: effectFn,
 
     recover<U>(
       fn: (error: Error) => U
