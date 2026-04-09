@@ -9,7 +9,7 @@ Type-safe error handling for TypeScript — with automatic Promise inference.
 ```ts
 const name = await safe(() => fetch('/api/user'))
   .map(res => res.json())           // transform — value changes
-  .effect(user => saveToDb(user))      // side effect — can break chain, value preserved
+  .ifOk(user => saveToDb(user))         // side effect — can break chain, value preserved
   .observeOk(user => console.log(user))// observe — can't break chain, just watch
   .recover(() => defaultUser)       // recover — replace error with fallback
   .map(user => user.name)           // transform — type flows automatically
@@ -41,7 +41,7 @@ No `TaskEither`, no `ResultAsync`, no separate API. The type system tracks it fo
 Every method name tells you two things: **what it does** and **whether it affects the chain**.
 
 ```
-Chain affected:     map · flatMap · effect · recover
+Chain affected:     map · flatMap · ifOk (effect) · recover
 Chain unaffected:   observe · observeOk · observeError
 Extract result:     unwrap · orElse · match · isOk
 ```
@@ -77,7 +77,7 @@ safe(() => JSON.parse(input))   // Safe<any>
 // Chain operations
 safe(() => riskyOperation())
   .map(value => transform(value))       // transform the value
-  .effect(value => sideEffect(value))      // side effect — errors break the chain
+  .ifOk(value => sideEffect(value))         // side effect — errors break the chain
   .observeOk(value => console.log(value))  // observe — errors are ignored
   .recover(err => fallbackValue)        // recover from error
   .unwrap()                             // extract the result
@@ -93,8 +93,9 @@ Methods are organized by **impact on the chain**:
 │  Transform        map(fn)       value → new value            │
 │  (changes value)  flatMap(fn)   value → Safe → flatten       │
 │                                                              │
-│  Side Effect      effect(fn)    run on success, keep value   │
-│  (can break)      recover(fn)   run on error, provide value  │
+│  Side Effect      ifOk(fn)      run on success, keep value   │
+│  (can break)      effect(fn)    ↑ alias for ifOk             │
+│                   recover(fn)   run on error, provide value  │
 │                                                              │
 │  Observe          observe(fn)      see SafeResult, can't break  │
 │  (can't break)    observeOk(fn)    see value only, can't break  │
@@ -125,14 +126,16 @@ const parse = (s: string) => safe(() => JSON.parse(s));
 safe('{"a":1}').flatMap(parse).unwrap() // { a: 1 }
 ```
 
-### `effect(fn)` — Side Effect on Success
+### `ifOk(fn)` — Side Effect on Success
 
 Runs a function on success. The **original value is preserved** (return value ignored). If the function **throws, the error propagates**. If it returns a Promise, the chain becomes async.
 
+`effect(fn)` is an alias for `ifOk`.
+
 ```ts
 safe(user)
-  .effect(u => saveToDb(u))     // if throws → error state
-  .effect(u => sendEmail(u))    // skipped if above threw
+  .ifOk(u => saveToDb(u))      // if throws → error state
+  .ifOk(u => sendEmail(u))     // skipped if above threw
   .map(u => u.name)
   .unwrap()
 ```
