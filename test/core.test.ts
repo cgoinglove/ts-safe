@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { safe } from '../src';
 import { safeEmpty, safeExec, safeValue } from '../src/core';
 
+const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
 describe('Safe', () => {
   // ─── Constructor ───────────────────────────────────────────────
 
@@ -500,7 +502,7 @@ describe('Safe', () => {
     it('calls ok handler on success', () => {
       const result = safe(42).match({
         ok: (v) => `value: ${v}`,
-        err: (e) => `error: ${e.message}`,
+        err: (e) => `error: ${msg(e)}`,
       });
       expect(result).toBe('value: 42');
     });
@@ -510,7 +512,7 @@ describe('Safe', () => {
         throw new Error('fail');
       }).match({
         ok: (v) => `value: ${v}`,
-        err: (e) => `error: ${e.message}`,
+        err: (e) => `error: ${msg(e)}`,
       });
       expect(result).toBe('error: fail');
     });
@@ -532,7 +534,7 @@ describe('Safe', () => {
         })
         .match({
           ok: () => 'ok',
-          err: (e) => `error: ${e.message}`,
+          err: (e) => `error: ${msg(e)}`,
         });
       expect(result).toBe('error: async fail');
     });
@@ -544,7 +546,7 @@ describe('Safe', () => {
         .recover(() => 'recovered')
         .match({
           ok: (v) => `ok: ${v}`,
-          err: (e) => `err: ${e.message}`,
+          err: (e) => `err: ${msg(e)}`,
         });
       expect(result).toBe('ok: recovered');
     });
@@ -747,7 +749,7 @@ describe('Safe', () => {
       const format = (s: ReturnType<typeof safe<number>>) =>
         s.match({
           ok: (v) => ({ status: 'success' as const, data: v }),
-          err: (e) => ({ status: 'error' as const, message: e.message }),
+          err: (e) => ({ status: 'error' as const, message: msg(e) }),
         });
 
       expect(format(safe(42))).toEqual({ status: 'success', data: 42 });

@@ -42,21 +42,19 @@ describe('safeResult', () => {
       expect(result.value).toBeUndefined();
     });
 
-    it('should create a failure result from an error string', () => {
+    it('should preserve string error values as-is', () => {
       const errorMsg = 'Something went wrong';
       const result = safeResult.fail(errorMsg);
       expect(result.isOk).toBe(false);
-      expect(result.error).toBeInstanceOf(Error);
-      expect(result.error?.message).toBe(errorMsg);
+      expect(result.error).toBe(errorMsg);
       expect(result.value).toBeUndefined();
     });
 
-    it('should handle arbitrary error values', () => {
+    it('should preserve arbitrary error values as-is', () => {
       const arbitraryError = { code: 'ERR123', reason: 'Unknown' };
       const result = safeResult.fail(arbitraryError);
       expect(result.isOk).toBe(false);
-      expect(result.error).toBeInstanceOf(Error);
-      expect(result.error?.message).toContain('ERR123');
+      expect(result.error).toBe(arbitraryError);
       expect(result.value).toBeUndefined();
     });
   });
@@ -80,8 +78,7 @@ describe('safeResult', () => {
       });
 
       expect(updated.isOk).toBe(false);
-      expect(updated.error).toBeInstanceOf(Error);
-      expect(updated.error?.message).toBe('Initial error');
+      expect(updated.error).toBe('Initial error');
     });
 
     it('should handle errors thrown in the callback', () => {
@@ -93,7 +90,7 @@ describe('safeResult', () => {
 
       expect(updated.isOk).toBe(false);
       expect(updated.error).toBeInstanceOf(Error);
-      expect(updated.error?.message).toBe('Error in callback');
+      expect((updated.error as Error).message).toBe('Error in callback');
     });
 
     it('should handle promises that resolve', async () => {
@@ -132,7 +129,7 @@ describe('safeResult', () => {
       const resolvedResult = await updated;
       expect(resolvedResult.isOk).toBe(false);
       expect(resolvedResult.error).toBeInstanceOf(Error);
-      expect(resolvedResult.error?.message).toBe('Promise rejected in callback');
+      expect((resolvedResult.error as Error).message).toBe('Promise rejected in callback');
     });
 
     it('should chain multiple updates', async () => {

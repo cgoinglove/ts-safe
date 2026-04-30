@@ -3,12 +3,12 @@ import { isPromiseLike } from './shared';
 /**
  * Represents any value that can be treated as an error.
  */
-type ErrorLike = Error | string | unknown;
+type ErrorLike = unknown;
 
 export type SafeResult<T = any> =
   | {
       isOk: false;
-      error: Error;
+      error: ErrorLike;
       value?: undefined;
     }
   | {
@@ -16,16 +16,6 @@ export type SafeResult<T = any> =
       error?: undefined;
       value: T;
     };
-
-const normalizeError = (error: ErrorLike): Error => {
-  if (error instanceof Error) return error;
-  if (typeof error === 'string') return new Error(error);
-  try {
-    return new Error(JSON.stringify(error));
-  } catch {
-    return new Error('Unknown error');
-  }
-};
 
 const ok = <T>(value: T): SafeResult<T> => {
   return {
@@ -37,7 +27,7 @@ const ok = <T>(value: T): SafeResult<T> => {
 const fail = <T>(error: ErrorLike): SafeResult<T> => {
   return {
     isOk: false,
-    error: normalizeError(error),
+    error,
     value: undefined,
   };
 };
@@ -66,7 +56,7 @@ const update = <T extends PromiseLike<SafeResult> | SafeResult, U>(
       ) as R;
     return ok(next) as R;
   } catch (error) {
-    return fail(error as Error) as R;
+    return fail(error) as R;
   }
 };
 

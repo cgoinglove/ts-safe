@@ -102,7 +102,7 @@ export interface Safe<T> {
    *   .unwrap()
    */
   ifFail<U>(
-    fn: (error: Error) => U
+    fn: (error: unknown) => U
   ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T>;
 
   /**
@@ -128,7 +128,7 @@ export interface Safe<T> {
    *   .unwrap()                   // 'default'
    */
   recover<U>(
-    fn: (error: Error) => U
+    fn: (error: unknown) => U
   ): Safe<
     [T] extends [PromiseLike<any>] ? Promise<Awaited<T> | ([U] extends [PromiseLike<any>] ? Awaited<U> : U)> : T | U
   >;
@@ -185,7 +185,7 @@ export interface Safe<T> {
    *   .observeError(err => console.error(err))  // logs the error
    *   .recover(() => 'fallback')
    */
-  observeError(fn: (error: Error) => any): Safe<T>;
+  observeError(fn: (error: unknown) => any): Safe<T>;
 
   /**
    * Extracts the final value by pattern matching on success/error state.
@@ -201,7 +201,7 @@ export interface Safe<T> {
    */
   match<U, F>(handlers: {
     ok: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U;
-    err: (error: Error) => F;
+    err: (error: unknown) => F;
   }): [T] extends [PromiseLike<any>] ? Promise<U | F> : U | F;
 
   /**
@@ -252,7 +252,7 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
     });
   };
 
-  const ifFailFn = <U>(fn: (error: Error) => U): any => {
+  const ifFailFn = <U>(fn: (error: unknown) => U): any => {
     return next((prev) => {
       if (prev.isOk) return prev.value;
       const v = fn(prev.error);
@@ -288,7 +288,7 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
     effect: effectFn,
 
     recover<U>(
-      fn: (error: Error) => U
+      fn: (error: unknown) => U
     ): Safe<
       [T] extends [PromiseLike<any>] ? Promise<Awaited<T> | ([U] extends [PromiseLike<any>] ? Awaited<U> : U)> : T | U
     > {
@@ -328,7 +328,7 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
       }) as Safe<T>;
     },
 
-    observeError(fn: (error: Error) => any): Safe<T> {
+    observeError(fn: (error: unknown) => any): Safe<T> {
       return next((prev) => {
         if (!prev.isOk) {
           try {
@@ -345,7 +345,7 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
 
     match<U, F>(handlers: {
       ok: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U;
-      err: (error: Error) => F;
+      err: (error: unknown) => F;
     }): [T] extends [PromiseLike<any>] ? Promise<U | F> : U | F {
       if (isPromiseLike(result))
         return result.then((v) => {
