@@ -41,7 +41,7 @@ safe(1)                          // Safe<number>
 모든 메서드 이름이 두 가지를 알려줍니다: **무엇을 하는지**와 **체인에 영향이 있는지**.
 
 ```
-체인에 영향 있음:    map · flatMap · ifOk (effect) · recover
+체인에 영향 있음:    map · flatMap · ifOk · ifFail · recover
 체인에 영향 없음:    observe · observeOk · observeError
 결과 추출:          unwrap · orElse · match · isOk
 ```
@@ -94,8 +94,9 @@ safe(() => riskyOperation())
 │  (값이 바뀜)      flatMap(fn)   값 → Safe → 평탄화             │
 │                                                              │
 │  사이드 이펙트    ifOk(fn)      성공 시 실행, 값 보존            │
-│  (체인에 영향)    effect(fn)    ↑ ifOk의 별칭                   │
+│  (체인에 영향)    ifFail(fn)    실패 시 실행, 에러 보존           │
 │                   recover(fn)   에러 시 실행, 대체값 제공         │
+│                   effect(fn)    ifOk의 deprecated 별칭           │
 │                                                              │
 │  관찰             observe(fn)      SafeResult 관찰, 체인 무영향    │
 │  (체인에 무영향)  observeOk(fn)    성공 값만 관찰, 체인 무영향       │
@@ -130,13 +131,26 @@ safe('{"a":1}').flatMap(parse).unwrap() // { a: 1 }
 
 성공 시 함수를 실행합니다. **원래 값은 보존**되고 (반환값 무시), 함수가 **throw하면 에러가 전파**됩니다. Promise를 반환하면 체인이 async로 전환됩니다.
 
-`effect(fn)`는 `ifOk`의 별칭입니다.
+> `effect(fn)`는 `ifOk`의 deprecated 별칭입니다.
 
 ```ts
 safe(user)
   .ifOk(u => saveToDb(u))      // throw하면 → 에러 상태
   .ifOk(u => sendEmail(u))     // 위에서 throw했으면 스킵
   .map(u => u.name)
+  .unwrap()
+```
+
+### `ifFail(fn)` — 실패 시 사이드 이펙트
+
+`ifOk`의 에러 채널 버전. 실패 시 함수를 실행합니다. **원래 에러는 보존**되고 (반환값 무시), 콜백이 **throw하면 그 에러가 원본을 대체**합니다. Promise를 반환하면 체인이 async로 전환됩니다.
+
+복구하지 않고 실패에 반응(보고, 로깅)하면서 콜백 자체의 실패도 드러내고 싶을 때 사용합니다. `observeError`는 콜백 에러를 조용히 삼킨다는 점에서 다릅니다.
+
+```ts
+safe(() => fetchUser())
+  .ifFail(err => reportToSentry(err))  // Sentry가 throw하면 그 에러가 원본을 대체
+  .recover(() => defaultUser)          // ifFail 후에도 체인은 에러 상태
   .unwrap()
 ```
 
@@ -165,14 +179,14 @@ safe(result)
   .unwrap()
 ```
 
-`effect`와의 차이: 로깅 서비스가 throw하면 `effect`는 체인을 끊고, `observe`는 에러를 삼키고 계속합니다.
+`ifOk` / `ifFail`과의 차이: 로깅 서비스가 throw하면 `ifOk`/`ifFail`은 체인을 끊고, `observe`는 에러를 삼키고 계속합니다.
 
 ```ts
-// effect — 에러 전파 (중요한 사이드 이펙트용)
-safe(data).effect(d => saveToDb(d))      // DB 실패 → 체인 끊김 ✓
+// ifOk — 에러 전파 (중요한 사이드 이펙트용)
+safe(data).ifOk(d => saveToDb(d))         // DB 실패 → 체인 끊김 ✓
 
 // observeOk — 에러 무시 (선택적 사이드 이펙트용)
-safe(data).observeOk(d => analytics(d))  // 분석 실패 → 체인 계속 ✓
+safe(data).observeOk(d => analytics(d))   // 분석 실패 → 체인 계속 ✓
 ```
 
 ### `match({ ok, err })` — 패턴 매칭
@@ -218,7 +232,7 @@ ts-safe의 핵심 차별점. 별도 문법 없이 sync/async 상태를 **타입 
 | `.map(x => x + 1)` | `Safe<number>` | sync 콜백 → sync 유지 |
 | `.map(async x => fetch(x))` | `Safe<Promise<Response>>` | async 콜백 → async 전환 |
 | `.map(res => res.json())` | `Safe<Promise<any>>` | 콜백은 await된 값을 받음 |
-| `.effect(async x => log(x))` | `Safe<Promise<T>>` | async 사이드 이펙트 → async 전환 |
+| `.ifOk(async x => log(x))` | `Safe<Promise<T>>` | async 사이드 이펙트 → async 전환 |
 | `.observe(async x => log(x))` | `Safe<T>` | observe는 **절대** async 전환 안 함 |
 
 ### 핵심 규칙

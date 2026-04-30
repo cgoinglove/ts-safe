@@ -199,6 +199,105 @@ describe('Safe', () => {
     });
   });
 
+  // ─── ifOk (alias for effect) ───────────────────────────────────
+
+  describe('ifOk', () => {
+    it('is a working alias for effect', () => {
+      const fn = vi.fn();
+      const value = safe(42).ifOk(fn).unwrap();
+      expect(fn).toHaveBeenCalledWith(42);
+      expect(value).toBe(42);
+    });
+
+    it('propagates thrown error like effect', () => {
+      expect(() =>
+        safe(42)
+          .ifOk(() => {
+            throw new Error('ifOk fail');
+          })
+          .unwrap()
+      ).toThrow('ifOk fail');
+    });
+  });
+
+  // ─── ifFail ────────────────────────────────────────────────────
+
+  describe('ifFail', () => {
+    it('executes on error with the error object', () => {
+      const fn = vi.fn();
+      safe(() => {
+        throw new Error('boom');
+      })
+        .ifFail(fn)
+        .recover(() => 'fallback')
+        .unwrap();
+      expect(fn).toHaveBeenCalledWith(expect.objectContaining({ message: 'boom' }));
+    });
+
+    it('preserves the original error (return value ignored)', () => {
+      expect(() =>
+        safe(() => {
+          throw new Error('original');
+        })
+          .ifFail(() => 'ignored')
+          .unwrap()
+      ).toThrow('original');
+    });
+
+    it('skips on success state', () => {
+      const fn = vi.fn();
+      const value = safe(42).ifFail(fn).unwrap();
+      expect(fn).not.toHaveBeenCalled();
+      expect(value).toBe(42);
+    });
+
+    it('replaces original error if callback throws', () => {
+      expect(() =>
+        safe(() => {
+          throw new Error('original');
+        })
+          .ifFail(() => {
+            throw new Error('reporter fail');
+          })
+          .unwrap()
+      ).toThrow('reporter fail');
+    });
+
+    it('handles async side effect', async () => {
+      const fn = vi.fn(async () => {});
+      await expect(
+        safe(() => {
+          throw new Error('boom');
+        })
+          .ifFail(fn)
+          .unwrap()
+      ).rejects.toThrow('boom');
+      expect(fn).toHaveBeenCalled();
+    });
+
+    it('async callback rejection replaces original error', async () => {
+      await expect(
+        safe(() => {
+          throw new Error('original');
+        })
+          .ifFail(() => Promise.reject(new Error('async reporter fail')))
+          .unwrap()
+      ).rejects.toThrow('async reporter fail');
+    });
+
+    it('chain stays in error state for downstream recover', () => {
+      const fn = vi.fn();
+      const value = safe(() => {
+        throw new Error('boom');
+      })
+        .ifFail(fn)
+        .recover(() => 'recovered')
+        .unwrap();
+      expect(fn).toHaveBeenCalled();
+      expect(value).toBe('recovered');
+    });
+  });
+
   // ─── recover ───────────────────────────────────────────────────
 
   describe('recover', () => {

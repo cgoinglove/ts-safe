@@ -41,7 +41,7 @@ No `TaskEither`, no `ResultAsync`, no separate API. The type system tracks it fo
 Every method name tells you two things: **what it does** and **whether it affects the chain**.
 
 ```
-Chain affected:     map · flatMap · ifOk (effect) · recover
+Chain affected:     map · flatMap · ifOk · ifFail · recover
 Chain unaffected:   observe · observeOk · observeError
 Extract result:     unwrap · orElse · match · isOk
 ```
@@ -94,8 +94,9 @@ Methods are organized by **impact on the chain**:
 │  (changes value)  flatMap(fn)   value → Safe → flatten       │
 │                                                              │
 │  Side Effect      ifOk(fn)      run on success, keep value   │
-│  (can break)      effect(fn)    ↑ alias for ifOk             │
+│  (can break)      ifFail(fn)    run on error, keep error     │
 │                   recover(fn)   run on error, provide value  │
+│                   effect(fn)    deprecated alias for ifOk    │
 │                                                              │
 │  Observe          observe(fn)      see SafeResult, can't break  │
 │  (can't break)    observeOk(fn)    see value only, can't break  │
@@ -130,13 +131,26 @@ safe('{"a":1}').flatMap(parse).unwrap() // { a: 1 }
 
 Runs a function on success. The **original value is preserved** (return value ignored). If the function **throws, the error propagates**. If it returns a Promise, the chain becomes async.
 
-`effect(fn)` is an alias for `ifOk`.
+> `effect(fn)` is a deprecated alias for `ifOk`.
 
 ```ts
 safe(user)
   .ifOk(u => saveToDb(u))      // if throws → error state
   .ifOk(u => sendEmail(u))     // skipped if above threw
   .map(u => u.name)
+  .unwrap()
+```
+
+### `ifFail(fn)` — Side Effect on Failure
+
+Mirror of `ifOk` for the error channel. Runs a function on failure. The **original error is preserved** (return value ignored). If the callback **throws, that error replaces the original**. If it returns a Promise, the chain becomes async.
+
+Use when you want to react to a failure (report it, log it) without recovering and want the callback's own failures to be visible. Compare with `observeError`, which swallows callback errors silently.
+
+```ts
+safe(() => fetchUser())
+  .ifFail(err => reportToSentry(err))  // if Sentry throws, that error replaces the original
+  .recover(() => defaultUser)          // chain is still error after ifFail
   .unwrap()
 ```
 
@@ -165,14 +179,14 @@ safe(result)
   .unwrap()
 ```
 
-The difference from `effect`: if your logging service throws, `effect` would break the chain. `observe` swallows the error and continues.
+The difference from `ifOk` / `ifFail`: if your logging service throws, those would break the chain. `observe` swallows the error and continues.
 
 ```ts
-// effect — error propagates (for important side effects)
-safe(data).effect(d => saveToDb(d))      // DB failure → chain breaks ✓
+// ifOk — error propagates (for important side effects)
+safe(data).ifOk(d => saveToDb(d))         // DB failure → chain breaks ✓
 
 // observeOk — error ignored (for optional side effects)
-safe(data).observeOk(d => analytics(d))  // analytics failure → chain continues ✓
+safe(data).observeOk(d => analytics(d))   // analytics failure → chain continues ✓
 ```
 
 ### `match({ ok, err })` — Pattern Match
@@ -218,7 +232,7 @@ This is the core differentiator. ts-safe tracks sync/async state **at the type l
 | `.map(x => x + 1)` | `Safe<number>` | Sync callback → stays sync |
 | `.map(async x => fetch(x))` | `Safe<Promise<Response>>` | Async callback → becomes async |
 | `.map(res => res.json())` | `Safe<Promise<any>>` | Callback receives awaited value |
-| `.effect(async x => log(x))` | `Safe<Promise<T>>` | Async side effect → becomes async |
+| `.ifOk(async x => log(x))` | `Safe<Promise<T>>` | Async side effect → becomes async |
 | `.observe(async x => log(x))` | `Safe<T>` | observe **never** goes async |
 
 ### The key rule

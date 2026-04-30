@@ -12,8 +12,9 @@ import { isPromiseLike } from './shared';
  * - `flatMap` — transforms with a function returning another Safe
  *
  * **Side Effect** — runs logic, can affect chain state:
- * - `effect` — side effect on success (errors propagate, value preserved)
- * - `recover` — provides a recovery value on error
+ * - `ifOk` — side effect on success (value preserved, errors propagate)
+ * - `ifFail` — side effect on failure (error preserved, errors propagate)
+ * - `recover` — replaces an error with a value (transitions to success)
  *
  * **Observe** — pure observation, never affects the chain:
  * - `observe` — observes the full SafeResult
@@ -63,7 +64,7 @@ export interface Safe<T> {
    * - If the function returns a **Promise**, the chain becomes asynchronous
    * - The original value is **preserved** (return value is ignored)
    *
-   * Use `effect` for operations like saving to DB, logging to external services,
+   * Use `ifOk` for operations like saving to DB, logging to external services,
    * or any side effect where failures should stop the chain.
    *
    * @param fn - Side effect function to execute on success
@@ -71,24 +72,43 @@ export interface Safe<T> {
    *
    * @example
    * safe(user)
-   *   .effect(u => saveToDb(u))     // if saveToDb throws, chain enters error state
-   *   .map(u => u.name)             // skipped if effect threw
+   *   .ifOk(u => saveToDb(u))      // if saveToDb throws, chain enters error state
+   *   .map(u => u.name)            // skipped if ifOk threw
    *   .unwrap()
    */
-  effect<U>(
+  ifOk<U>(
     fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
   ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T>;
 
   /**
-   * Alias for {@link effect}. Runs a side effect on success.
+   * Executes a side effect on failure. **Affects the chain.**
+   *
+   * - Only runs when `isOk` is `false` (skipped on success)
+   * - If the function **throws**, the new error **replaces** the original
+   * - If the function returns a **Promise**, the chain becomes asynchronous
+   * - The original error is **preserved** (return value is ignored)
+   *
+   * Use `ifFail` for error reporting where the side effect's own failure
+   * should be visible. Unlike `observeError`, errors from the callback propagate.
+   * Unlike `recover`, the chain stays in error state.
+   *
+   * @param fn - Side effect function to execute on failure
+   * @returns The same Safe with the original error preserved
    *
    * @example
-   * safe(user)
-   *   .ifOk(u => saveToDb(u))
-   *   .map(u => u.name)
+   * safe(() => fetchUser())
+   *   .ifFail(err => reportToSentry(err))  // if reportToSentry throws, that error replaces the original
+   *   .recover(() => defaultUser)          // chain still error after ifFail, recover handles it
    *   .unwrap()
    */
-  ifOk<U>(
+  ifFail<U>(
+    fn: (error: Error) => U
+  ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T>;
+
+  /**
+   * @deprecated Use {@link ifOk} instead. Kept as an alias for backward compatibility.
+   */
+  effect<U>(
     fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
   ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T>;
 
@@ -232,6 +252,18 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
     });
   };
 
+  const ifFailFn = <U>(fn: (error: Error) => U): any => {
+    return next((prev) => {
+      if (prev.isOk) return prev.value;
+      const v = fn(prev.error);
+      if (isPromiseLike(v))
+        return v.then(() => {
+          throw prev.error;
+        });
+      throw prev.error;
+    });
+  };
+
   return {
     map<U>(
       transform: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
@@ -251,8 +283,9 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
       });
     },
 
-    effect: effectFn,
     ifOk: effectFn,
+    ifFail: ifFailFn,
+    effect: effectFn,
 
     recover<U>(
       fn: (error: Error) => U
