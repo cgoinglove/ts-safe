@@ -1,17 +1,20 @@
 import { safeValue, Safe } from './core';
+import type { IsAny } from './shared';
 
 type NonDistributive<T> = [T] extends [any] ? T : never;
 
 type HasPromise<T> =
-  NonDistributive<T> extends Promise<any>
-    ? true
-    : (T extends any ? (T extends Promise<any> ? true : false) : never) extends false
-      ? false
-      : true;
+  IsAny<T> extends true
+    ? false
+    : NonDistributive<T> extends Promise<any>
+      ? true
+      : (T extends any ? (T extends Promise<any> ? true : false) : never) extends false
+        ? false
+        : true;
 
 type SafeCheckPromise<T, U> = HasPromise<U> extends true ? Safe<Promise<Awaited<T>>> : Safe<T>;
 
-type SafeMap<A, B> = (input: A extends PromiseLike<any> ? Awaited<A> : A) => B;
+type SafeMap<A, B> = (input: IsAny<A> extends true ? A : A extends PromiseLike<any> ? Awaited<A> : A) => B;
 
 export function safePipe<Input, A>(ab: SafeMap<Input, A>): (input: Input) => SafeCheckPromise<A, Input>;
 

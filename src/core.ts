@@ -1,5 +1,5 @@
 import { ExtractSafeValue, SafeResult, safeResult } from './result';
-import { isPromiseLike } from './shared';
+import { isPromiseLike, type IsPromiseLike } from './shared';
 
 /**
  * A safe container for values that handles errors gracefully
@@ -39,8 +39,8 @@ export interface Safe<T> {
    * safe(2).map(x => x * 3).unwrap() // 6
    */
   map<U>(
-    transform: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
-  ): [U] extends [PromiseLike<any>] ? Safe<U> : [T] extends [PromiseLike<any>] ? Safe<Promise<U>> : Safe<U>;
+    transform: (value: IsPromiseLike<T> extends true ? Awaited<T> : T) => U
+  ): IsPromiseLike<U> extends true ? Safe<U> : IsPromiseLike<T> extends true ? Safe<Promise<U>> : Safe<U>;
 
   /**
    * Transforms the value with a function that returns another Safe.
@@ -53,8 +53,8 @@ export interface Safe<T> {
    * safe(1).flatMap(x => safe(x + 1)).unwrap() // 2
    */
   flatMap<U>(
-    transform: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => Safe<U>
-  ): [U] extends [PromiseLike<any>] ? Safe<U> : [T] extends [PromiseLike<any>] ? Safe<Promise<U>> : Safe<U>;
+    transform: (value: IsPromiseLike<T> extends true ? Awaited<T> : T) => Safe<U>
+  ): IsPromiseLike<U> extends true ? Safe<U> : IsPromiseLike<T> extends true ? Safe<Promise<U>> : Safe<U>;
 
   /**
    * Executes a side effect on success. **Affects the chain.**
@@ -77,8 +77,8 @@ export interface Safe<T> {
    *   .unwrap()
    */
   ifOk<U>(
-    fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
-  ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T>;
+    fn: (value: IsPromiseLike<T> extends true ? Awaited<T> : T) => U
+  ): IsPromiseLike<T> extends true ? Safe<T> : IsPromiseLike<U> extends true ? Safe<Promise<T>> : Safe<T>;
 
   /**
    * Executes a side effect on failure. **Affects the chain.**
@@ -103,14 +103,14 @@ export interface Safe<T> {
    */
   ifFail<U>(
     fn: (error: unknown) => U
-  ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T>;
+  ): IsPromiseLike<T> extends true ? Safe<T> : IsPromiseLike<U> extends true ? Safe<Promise<T>> : Safe<T>;
 
   /**
    * @deprecated Use {@link ifOk} instead. Kept as an alias for backward compatibility.
    */
   effect<U>(
-    fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
-  ): [T] extends [PromiseLike<any>] ? Safe<T> : [U] extends [PromiseLike<any>] ? Safe<Promise<T>> : Safe<T>;
+    fn: (value: IsPromiseLike<T> extends true ? Awaited<T> : T) => U
+  ): IsPromiseLike<T> extends true ? Safe<T> : IsPromiseLike<U> extends true ? Safe<Promise<T>> : Safe<T>;
 
   /**
    * Recovers from an error by providing a replacement value. **Affects the chain.**
@@ -130,7 +130,7 @@ export interface Safe<T> {
   recover<U>(
     fn: (error: unknown) => U
   ): Safe<
-    [T] extends [PromiseLike<any>] ? Promise<Awaited<T> | ([U] extends [PromiseLike<any>] ? Awaited<U> : U)> : T | U
+    IsPromiseLike<T> extends true ? Promise<Awaited<T> | (IsPromiseLike<U> extends true ? Awaited<U> : U)> : T | U
   >;
 
   /**
@@ -149,7 +149,7 @@ export interface Safe<T> {
    *   .observe(result => console.log(result))  // { isOk: true, value: 42 }
    *   .unwrap()                                 // 42
    */
-  observe(fn: (result: [T] extends [PromiseLike<any>] ? SafeResult<Awaited<T>> : SafeResult<T>) => any): Safe<T>;
+  observe(fn: (result: IsPromiseLike<T> extends true ? SafeResult<Awaited<T>> : SafeResult<T>) => any): Safe<T>;
 
   /**
    * Observes the success value without affecting the chain. **No chain impact.**
@@ -167,7 +167,7 @@ export interface Safe<T> {
    *   .observeOk(value => console.log('Got:', value))  // logs 'Got: 42'
    *   .unwrap()                                         // 42
    */
-  observeOk(fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => any): Safe<T>;
+  observeOk(fn: (value: IsPromiseLike<T> extends true ? Awaited<T> : T) => any): Safe<T>;
 
   /**
    * Observes the error without affecting the chain. **No chain impact.**
@@ -200,15 +200,15 @@ export interface Safe<T> {
    * }) // 'success: 42'
    */
   match<U, F>(handlers: {
-    ok: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U;
+    ok: (value: IsPromiseLike<T> extends true ? Awaited<T> : T) => U;
     err: (error: unknown) => F;
-  }): [T] extends [PromiseLike<any>] ? Promise<U | F> : U | F;
+  }): IsPromiseLike<T> extends true ? Promise<U | F> : U | F;
 
   /**
    * Whether the Safe contains a success value.
    * Returns `Promise<boolean>` for asynchronous chains.
    */
-  isOk: [T] extends [PromiseLike<any>] ? Promise<boolean> : boolean;
+  isOk: IsPromiseLike<T> extends true ? Promise<boolean> : boolean;
 
   /**
    * Extracts the value from the Safe.
@@ -229,24 +229,24 @@ export interface Safe<T> {
    * @example
    * safe(() => { throw new Error() }).orElse('default') // 'default'
    */
-  orElse<U>(fallback: U): [T] extends [PromiseLike<any>] ? Promise<Awaited<T> | U> : T | U;
+  orElse<U>(fallback: U): IsPromiseLike<T> extends true ? Promise<Awaited<T> | U> : T | U;
 }
 
 const createChain = <Result extends SafeResult | Promise<SafeResult>, T = ExtractSafeValue<Result>>(
   result: Result
 ): Safe<T> => {
-  const next = <U>(cb: (r: [T] extends [PromiseLike<any>] ? SafeResult<Awaited<T>> : SafeResult<T>) => U) => {
-    return createChain(safeResult.update(result, cb as any)) as [U] extends [PromiseLike<any>]
+  const next = <U>(cb: (r: IsPromiseLike<T> extends true ? SafeResult<Awaited<T>> : SafeResult<T>) => U) => {
+    return createChain(safeResult.update(result, cb as any)) as IsPromiseLike<U> extends true
       ? Safe<U>
-      : [T] extends [PromiseLike<any>]
+      : IsPromiseLike<T> extends true
         ? Safe<Promise<U>>
         : Safe<U>;
   };
 
-  const effectFn = <U>(fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U): any => {
+  const effectFn = <U>(fn: (value: IsPromiseLike<T> extends true ? Awaited<T> : T) => U): any => {
     return next((prev) => {
       if (!prev.isOk) throw prev.error;
-      const v = fn(prev.value as [T] extends [PromiseLike<any>] ? Awaited<T> : T);
+      const v = fn(prev.value as IsPromiseLike<T> extends true ? Awaited<T> : T);
       if (isPromiseLike(v)) return v.then(() => prev.value);
       return prev.value;
     });
@@ -266,19 +266,19 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
 
   return {
     map<U>(
-      transform: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U
-    ): [U] extends [PromiseLike<any>] ? Safe<U> : [T] extends [PromiseLike<any>] ? Safe<Promise<U>> : Safe<U> {
+      transform: (value: IsPromiseLike<T> extends true ? Awaited<T> : T) => U
+    ): IsPromiseLike<U> extends true ? Safe<U> : IsPromiseLike<T> extends true ? Safe<Promise<U>> : Safe<U> {
       return next((prev) => {
-        if (prev.isOk) return transform(prev.value as [T] extends [PromiseLike<any>] ? Awaited<T> : T);
+        if (prev.isOk) return transform(prev.value as IsPromiseLike<T> extends true ? Awaited<T> : T);
         throw prev.error;
       });
     },
 
     flatMap<U>(
-      transform: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => Safe<U>
-    ): [U] extends [PromiseLike<any>] ? Safe<U> : [T] extends [PromiseLike<any>] ? Safe<Promise<U>> : Safe<U> {
+      transform: (value: IsPromiseLike<T> extends true ? Awaited<T> : T) => Safe<U>
+    ): IsPromiseLike<U> extends true ? Safe<U> : IsPromiseLike<T> extends true ? Safe<Promise<U>> : Safe<U> {
       return next((prev) => {
-        if (prev.isOk) return transform(prev.value as [T] extends [PromiseLike<any>] ? Awaited<T> : T).unwrap();
+        if (prev.isOk) return transform(prev.value as IsPromiseLike<T> extends true ? Awaited<T> : T).unwrap();
         throw prev.error;
       });
     },
@@ -290,20 +290,20 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
     recover<U>(
       fn: (error: unknown) => U
     ): Safe<
-      [T] extends [PromiseLike<any>] ? Promise<Awaited<T> | ([U] extends [PromiseLike<any>] ? Awaited<U> : U)> : T | U
+      IsPromiseLike<T> extends true ? Promise<Awaited<T> | (IsPromiseLike<U> extends true ? Awaited<U> : U)> : T | U
     > {
       return next((result) => {
         if (!result.isOk) return fn(result.error);
         return result.value;
       }) as Safe<
-        [T] extends [PromiseLike<any>] ? Promise<Awaited<T> | ([U] extends [PromiseLike<any>] ? Awaited<U> : U)> : T | U
+        IsPromiseLike<T> extends true ? Promise<Awaited<T> | (IsPromiseLike<U> extends true ? Awaited<U> : U)> : T | U
       >;
     },
 
-    observe(fn: (result: [T] extends [PromiseLike<any>] ? SafeResult<Awaited<T>> : SafeResult<T>) => any): Safe<T> {
+    observe(fn: (result: IsPromiseLike<T> extends true ? SafeResult<Awaited<T>> : SafeResult<T>) => any): Safe<T> {
       return next((prev) => {
         try {
-          const r = fn({ ...prev } as [T] extends [PromiseLike<any>] ? SafeResult<Awaited<T>> : SafeResult<T>);
+          const r = fn({ ...prev } as IsPromiseLike<T> extends true ? SafeResult<Awaited<T>> : SafeResult<T>);
           if (isPromiseLike(r)) r.then(null, () => {});
         } catch {
           // Errors are intentionally ignored in observe
@@ -313,11 +313,11 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
       }) as Safe<T>;
     },
 
-    observeOk(fn: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => any): Safe<T> {
+    observeOk(fn: (value: IsPromiseLike<T> extends true ? Awaited<T> : T) => any): Safe<T> {
       return next((prev) => {
         if (prev.isOk) {
           try {
-            const r = fn(prev.value as [T] extends [PromiseLike<any>] ? Awaited<T> : T);
+            const r = fn(prev.value as IsPromiseLike<T> extends true ? Awaited<T> : T);
             if (isPromiseLike(r)) r.then(null, () => {});
           } catch {
             // Errors are intentionally ignored in observeOk
@@ -344,22 +344,20 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
     },
 
     match<U, F>(handlers: {
-      ok: (value: [T] extends [PromiseLike<any>] ? Awaited<T> : T) => U;
+      ok: (value: IsPromiseLike<T> extends true ? Awaited<T> : T) => U;
       err: (error: unknown) => F;
-    }): [T] extends [PromiseLike<any>] ? Promise<U | F> : U | F {
+    }): IsPromiseLike<T> extends true ? Promise<U | F> : U | F {
       if (isPromiseLike(result))
         return result.then((v) => {
-          if (v.isOk) return handlers.ok(v.value as [T] extends [PromiseLike<any>] ? Awaited<T> : T);
+          if (v.isOk) return handlers.ok(v.value as IsPromiseLike<T> extends true ? Awaited<T> : T);
           return handlers.err(v.error);
-        }) as [T] extends [PromiseLike<any>] ? Promise<U | F> : U | F;
+        }) as IsPromiseLike<T> extends true ? Promise<U | F> : U | F;
 
       if (result.isOk)
-        return handlers.ok(result.value as [T] extends [PromiseLike<any>] ? Awaited<T> : T) as [T] extends [
-          PromiseLike<any>,
-        ]
-          ? Promise<U | F>
-          : U | F;
-      return handlers.err(result.error) as [T] extends [PromiseLike<any>] ? Promise<U | F> : U | F;
+        return handlers.ok(
+          result.value as IsPromiseLike<T> extends true ? Awaited<T> : T
+        ) as IsPromiseLike<T> extends true ? Promise<U | F> : U | F;
+      return handlers.err(result.error) as IsPromiseLike<T> extends true ? Promise<U | F> : U | F;
     },
 
     unwrap(): T {
@@ -373,17 +371,15 @@ const createChain = <Result extends SafeResult | Promise<SafeResult>, T = Extrac
       throw result.error;
     },
 
-    isOk: (isPromiseLike(result) ? result.then((v) => Promise.resolve(v.isOk)) : result.isOk) as [T] extends [
-      PromiseLike<any>,
-    ]
-      ? Promise<boolean>
-      : boolean,
+    isOk: (isPromiseLike(result)
+      ? result.then((v) => Promise.resolve(v.isOk))
+      : result.isOk) as IsPromiseLike<T> extends true ? Promise<boolean> : boolean,
 
-    orElse<U>(fallback: U): [T] extends [PromiseLike<any>] ? Promise<Awaited<T> | U> : T | U {
+    orElse<U>(fallback: U): IsPromiseLike<T> extends true ? Promise<Awaited<T> | U> : T | U {
       return next((result) => {
         if (!result.isOk) return fallback;
         return result.value;
-      }).unwrap() as [T] extends [PromiseLike<any>] ? Promise<Awaited<T> | U> : T | U;
+      }).unwrap() as IsPromiseLike<T> extends true ? Promise<Awaited<T> | U> : T | U;
     },
   };
 };
